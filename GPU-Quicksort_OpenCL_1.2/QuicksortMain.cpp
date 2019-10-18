@@ -3,18 +3,25 @@
      This software is supplied under the terms of a license agreement or 
      nondisclosure agreement with Intel Corporation and may not be copied 
      or disclosed except in accordance with the terms of that agreement. 
-        Copyright (C) 2014 Intel Corporation. All Rights Reserved.
+        Copyright (C) 2014-2019 Intel Corporation. All Rights Reserved.
 \* ************************************************************************* */
 
 // QuicksortMain.cpp : Defines the entry point for the console application.
 //
 
 #include <stdio.h>
+#ifdef _MSC_VER
+// Windows
 #include <windows.h>
 #include <tchar.h>
+#endif
 #include <assert.h>
 #include <string.h>
-
+#ifndef _MSC_VER
+// Linux
+#include <time.h>
+#include <unistd.h>
+#endif
 #include "OpenCLUtils.h"
 #include <math.h>
 #include <iostream>
@@ -23,6 +30,11 @@
 #include <vector>
 #include <map>
 
+#ifndef _MSC_VER
+// Linux
+#include "tbb/parallel_sort.h"
+using namespace tbb;
+#endif
 // Types:
 typedef unsigned int uint;
 typedef	uint QuicksortFlag;
@@ -30,15 +42,23 @@ typedef	uint QuicksortFlag;
 #define READ_ALIGNMENT  4096 // Intel recommended alignment
 #define WRITE_ALIGNMENT 4096 // Intel recommended alignment
 
-#define MAX_TEST_KERNELS 100
-typedef struct
-{
-	char				pKernelName[256];
-	uint				numBytesPerWorkItemRead;
-	cl_kernel			kernelHdl;
-	QuicksortFlag			testFlag;
-} QuicksortKernel;
-
+/// return a timestamp with sub-second precision 
+/** QueryPerformanceCounter and clock_gettime have an undefined starting point (null/zero)     
+ *  and can wrap around, i.e. be nulled again. **/ 
+double seconds() { 
+#ifdef _MSC_VER   
+  static LARGE_INTEGER frequency;   
+  if (frequency.QuadPart == 0)     ::QueryPerformanceFrequency(&frequency);   
+  LARGE_INTEGER now;   
+  ::QueryPerformanceCounter(&now);   
+  return now.QuadPart / double(frequency.QuadPart); 
+#else   
+  struct timespec now;   
+  clock_gettime(CLOCK_MONOTONIC, &now);   
+  return now.tv_sec + now.tv_nsec / 1000000000.0; 
+#endif 
+}
+ 
 typedef struct
 {	
 	// CL platform handles:
@@ -46,12 +66,6 @@ typedef struct
 	cl_context			contextHdl;
 	cl_program			programHdl;
 	cl_command_queue	cmdQHdl;
-
-	cl_mem buffIn;
-	cl_mem buffOut;
-	
-	QuicksortKernel	    	pTests[MAX_TEST_KERNELS];
-	uint				numTests;
 } OCLResources;
 
 // Globals:
@@ -61,7 +75,8 @@ static cl_kernel gqsort_kernel, lqsort_kernel;
 
 void Cleanup(OCLResources* pOCL, int iExitCode, bool bExit, char* optionalErrorMessage)
 {
-	if (optionalErrorMessage) printf ("%s\n", optionalErrorMessage);
+	if (optionalErrorMessage) 
+		printf ("%s\n", optionalErrorMessage);
 
 	memset(pOCL, 0, sizeof (OCLResources));
 
@@ -101,12 +116,7 @@ void parseArgs(OCLResources* pOCL, int argc, char** argv, unsigned int* test_ite
 
 void InstantiateOpenCLKernels(OCLResources *pOCL)
 {	
-	int t = -1;   // initialize test count (t)
-
-	pOCL->numTests =	++t;
-
 	// Instantiate kernels:
-
 	gqsort_kernel = clCreateKernel(pOCL->programHdl, "gqsort_kernel", &ciErrNum);
 	CheckCLError (ciErrNum, "Kernel creation failed.", "Kernel created.");
 	lqsort_kernel = clCreateKernel(pOCL->programHdl, "lqsort_kernel", &ciErrNum);
@@ -119,7 +129,6 @@ void InstantiateOpenCLKernels(OCLResources *pOCL)
 #define HOST 1
 #include "Quicksort.h"
 
-uint randomval();
 
 template <class T>
 T* partition(T* left, T* right, T pivot) {
@@ -154,11 +163,18 @@ void quicksort(T* data, int left, int right)
     int nleft = nright+1;
 
     if (left < nright) {
+      if (nright - left > 32) {
         quicksort(data, left, nright);
-	}
+      } else
+        std::sort(data + left, data + nright + 1);
+    }
 
     if (nleft < right) {
-		quicksort(data, nleft, right); 
+      if (right - nleft > 32)  {
+		    quicksort(data, nleft, right); 
+      } else {
+        std::sort(data + nleft, data + right + 1);
+      }
 	}
 }
 
@@ -278,7 +294,7 @@ void GPUQSort(OCLResources *pOCL, size_t size, T* d, T* dn)  {
 	CheckCLError(ciErrNum, "clSetKernelArg failed.", "clSetKernelArg");
 
 	const size_t MAXSEQ = optp(size, 0.00009516, 203);
-	const size_t MAX_SIZE = 12*max(MAXSEQ, QUICKSORT_BLOCK_SIZE);
+	const size_t MAX_SIZE = 12*std::max(MAXSEQ, (size_t)QUICKSORT_BLOCK_SIZE);
 	//std::cout << "MAXSEQ = " << MAXSEQ << std::endl;
 	uint startpivot = median(d[0], d[size/2], d[size-1]);
 	std::vector<work_record> work, done, news;
@@ -298,7 +314,7 @@ void GPUQSort(OCLResources *pOCL, size_t size, T* d, T* dn)  {
 		size_t blocksize = 0;
 		
 		for(auto it = work.begin(); it != work.end(); ++it) {
-			blocksize += max((it->end - it->start)/MAXSEQ, 1);
+			blocksize += std::max((it->end - it->start)/MAXSEQ, (size_t)1);
 		}
 		for(auto it = work.begin(); it != work.end(); ++it) {
 			uint start = it->start;
@@ -351,49 +367,55 @@ void GPUQSort(OCLResources *pOCL, size_t size, T* d, T* dn)  {
 int main(int argc, char** argv)
 {
 	OCLResources	myOCL;
-	unsigned int	test_iterations;
+	unsigned int	NUM_ITERATIONS;
 	char			pDeviceStr[256];
 	char			pVendorStr[256];
 	const char*		pSourceFileStr	= "QuicksortKernels.cl";
 	bool			bShowCL = false;
 
-	// Image data:
 	uint			heightReSz, widthReSz;
 
 	double totalTime, quickSortTime, stdSortTime;
 
-	LARGE_INTEGER beginClock, endClock, clockFreq;
-	QueryPerformanceFrequency (&clockFreq);
+	//LARGE_INTEGER beginClock, endClock, clockFreq;
+	double beginClock, endClock;
+	//QueryPerformanceFrequency (&clockFreq);
 
-	parseArgs (&myOCL, argc, argv, &test_iterations, pDeviceStr, pVendorStr, &widthReSz, &heightReSz, &bShowCL);
+	parseArgs (&myOCL, argc, argv, &NUM_ITERATIONS, pDeviceStr, pVendorStr, &widthReSz, &heightReSz, &bShowCL);
 
 	printf("\n\n\n--------------------------------------------------------------------\n");
 	
 	uint arraySize = widthReSz*heightReSz;
 	printf("Allocating array size of %d\n", arraySize);
+#ifdef _MSC_VER 
 	uint* pArray = (uint*)_aligned_malloc (((arraySize*sizeof(uint))/64 + 1)*64, 4096);
 	uint* pArrayCopy = (uint*)_aligned_malloc (((arraySize*sizeof(uint))/64 + 1)*64, 4096);
+#else // _MSC_VER
+  uint* pArray = (uint*)aligned_alloc (4096, ((arraySize*sizeof(uint))/64 + 1)*64);
+  uint* pArrayCopy = (uint*)aligned_alloc (4096, ((arraySize*sizeof(uint))/64 + 1)*64);
+#endif // _MSC_VER
 
-	std::generate(pArray, pArray + arraySize, []() { static uint j = 0; return j++; });
+	std::generate(pArray, pArray + arraySize, [](){static uint i = 0; return ++i; });
 	std::random_shuffle(pArray, pArray + arraySize);
 #ifdef RUN_CPU_SORTS
 	std::cout << "Sorting the regular way..." << std::endl;
 	std::copy(pArray, pArray + arraySize, pArrayCopy);
 
-	QueryPerformanceCounter (&beginClock);
+  beginClock = seconds();
 	std::sort(pArrayCopy, pArrayCopy + arraySize);
-	QueryPerformanceCounter (&endClock);
-	totalTime = double(endClock.QuadPart - beginClock.QuadPart) / clockFreq.QuadPart;	
+        endClock = seconds();
+	totalTime = endClock - beginClock;
 	std::cout << "Time to sort: " << totalTime * 1000 << " ms" << std::endl;
 	stdSortTime = totalTime;
 
-	std::cout << "Sorting with quicksort on the cpu: " << std::endl;
+	std::cout << "Sorting with parallel quicksort on the cpu: " << std::endl;
 	std::copy(pArray, pArray + arraySize, pArrayCopy);
 
-	QueryPerformanceCounter (&beginClock);
-	quicksort(pArrayCopy, 0, arraySize-1);
-	QueryPerformanceCounter (&endClock);
-	totalTime = double(endClock.QuadPart - beginClock.QuadPart) / clockFreq.QuadPart;
+  beginClock = seconds();
+	//quicksort(pArrayCopy, 0, arraySize-1);
+  parallel_sort(pArrayCopy, pArrayCopy + arraySize);
+  endClock = seconds();
+	totalTime = endClock - beginClock;
 	std::cout << "Time to sort: " << totalTime * 1000 << " ms" << std::endl;
 	quickSortTime = totalTime;
 #ifdef TRUST_BUT_VERIFY
@@ -404,14 +426,21 @@ int main(int argc, char** argv)
 		std::cout << "verifying: ";
 		std::sort(verify.begin(), verify.end());
 		bool correct = std::equal(verify.begin(), verify.end(), pArrayCopy);
+		unsigned int num_discrepancies = 0;
 		if (!correct) {
 			for(size_t i = 0; i < arraySize; i++) {
 				if (verify[i] != pArrayCopy[i]) {
-					std:: cout << "discrepancy at " << i << " " << pArrayCopy[i] << std::endl;
+					//std:: cout << "discrepancy at " << i << " " << pArrayCopy[i] << " expected " << verify[i] << std::endl;
+					num_discrepancies++;
 				}
 			}
 		}
 		std::cout << std::boolalpha << correct << std::endl;
+		if (!correct) {
+			char y;
+			std::cout << "num_discrepancies: " << num_discrepancies << std::endl;
+			std::cin >> y;
+		}
 	}
 #endif
 #endif // RUN_CPU_SORTS
@@ -420,33 +449,31 @@ int main(int argc, char** argv)
 	InitializeOpenCL (pDeviceStr, pVendorStr, &myOCL.deviceID, &myOCL.contextHdl, &myOCL.cmdQHdl);
 	if (bShowCL)
 		QueryPrintOpenCLDeviceInfo (myOCL.deviceID, myOCL.contextHdl);	
-	QueryPerformanceCounter (&beginClock);
+	beginClock = seconds();
 	CompileOpenCLProgram (myOCL.deviceID, myOCL.contextHdl, pSourceFileStr, &myOCL.programHdl);
-	QueryPerformanceCounter (&endClock);
-	totalTime = double(endClock.QuadPart - beginClock.QuadPart) / clockFreq.QuadPart;
+	endClock = seconds();
+	totalTime = endClock - beginClock;
 	std::cout << "Time to build OpenCL Program: " << totalTime * 1000 << " ms" << std::endl;
 	InstantiateOpenCLKernels (&myOCL);
 
 	std::cout << "Sorting with GPUQSort on the " << pDeviceStr << ": " << std::endl;
-
 	std::vector<uint> original(arraySize);
 	std::copy(pArray, pArray + arraySize, original.begin());
 
-	uint NUM_ITERATIONS = test_iterations;
 	std::vector<double> times;
 	times.resize(NUM_ITERATIONS);
 	double AverageTime = 0.0;
+	uint num_failures = 0;
 	for(uint k = 0; k < NUM_ITERATIONS; k++) {
 		std::copy(original.begin(), original.end(), pArray);
-		//std::copy(pArray, pArray + arraySize, pArrayCopy);
 		std::vector<uint> seqs;
 		std::vector<uint> verify(arraySize);
 		std::copy(pArray, pArray + arraySize, verify.begin());
 
-		QueryPerformanceCounter (&beginClock);
+		beginClock = seconds();
 		GPUQSort(&myOCL, arraySize, pArray, pArrayCopy);
-		QueryPerformanceCounter (&endClock);
-		totalTime = double(endClock.QuadPart - beginClock.QuadPart) / clockFreq.QuadPart;
+		endClock = seconds();
+		totalTime = endClock - beginClock;
 		std::cout << "Time to sort: " << totalTime * 1000 << " ms" << std::endl;
 		times[k] = totalTime;
 		AverageTime += totalTime;
@@ -454,42 +481,54 @@ int main(int argc, char** argv)
 		std::cout << "verifying: ";
 		std::sort(verify.begin(), verify.end());
 		bool correct = std::equal(verify.begin(), verify.end(), pArray);
+		unsigned int num_discrepancies = 0;
 		if (!correct) {
 			for(size_t i = 0; i < arraySize; i++) {
 				if (verify[i] != pArray[i]) {
-					std:: cout << "discrepancy at " << i << " " << pArray[i] << std::endl;
+					//std:: cout << "discrepancy at " << i << " " << pArray[i] << " expected " << verify[i] << std::endl;
+					num_discrepancies++;
 				}
 			}
 		}
 		std::cout << std::boolalpha << correct << std::endl;
+		if (!correct) {
+			std::cout << "num_discrepancies: " << num_discrepancies << std::endl;
+			num_failures ++;
+		}
 #endif
 	}
+	std::cout << " Number of failures: " << num_failures << " out of " << NUM_ITERATIONS << std::endl;
 	AverageTime = AverageTime/NUM_ITERATIONS;
 	std::cout << "Average Time: " << AverageTime * 1000 << " ms" << std::endl;
 	double stdDev = 0.0, minTime = 1000000.0, maxTime = 0.0;
 	for(uint k = 0; k < NUM_ITERATIONS; k++) 
 	{
 		stdDev += (AverageTime - times[k])*(AverageTime - times[k]);
-		minTime = min(minTime, times[k]);
-		maxTime = max(maxTime, times[k]);
+		minTime = std::min(minTime, times[k]);
+		maxTime = std::max(maxTime, times[k]);
 	}
 
-	stdDev = sqrt(stdDev/(NUM_ITERATIONS - 1));
-	std::cout << "Standard Deviation: " << stdDev * 1000 << std::endl;
-	std::cout << "%error (3*stdDev)/Average: " << 3*stdDev / AverageTime * 100 << "%" << std::endl;
-	std::cout << "min time: " << minTime * 1000 << " ms" << std::endl;
-	std::cout << "max time: " << maxTime * 1000 << " ms" << std::endl;
+	if (NUM_ITERATIONS > 1) {
+		stdDev = sqrt(stdDev/(NUM_ITERATIONS - 1));
+		std::cout << "Standard Deviation: " << stdDev * 1000 << std::endl;
+		std::cout << "%error (3*stdDev)/Average: " << 3*stdDev / AverageTime * 100 << "%" << std::endl;
+		std::cout << "min time: " << minTime * 1000 << " ms" << std::endl;
+		std::cout << "max time: " << maxTime * 1000 << " ms" << std::endl;
+	}
+
 #ifdef RUN_CPU_SORTS
 	std::cout << "Average speedup over CPU quicksort: " << quickSortTime/AverageTime << std::endl;
 	std::cout << "Average speedup over CPU std::sort: " << stdSortTime/AverageTime << std::endl;
 #endif // RUN_CPU_SORTS
 
 	printf("-------done--------------------------------------------------------\n");
-	getchar();
-	Sleep(2000);
-
+#ifdef _MSC_VER
 	_aligned_free(pArray);
 	_aligned_free(pArrayCopy);
+#else // _MSC_VER
+  free(pArray);
+  free(pArrayCopy);
+#endif // _MSC_VER
 
 	return 0;
 }

@@ -9,12 +9,20 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8)
   set(bitness "x64")
 endif()
 
+if(WIN32)
 add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 include_directories($ENV{INTELOCLSDKROOT}/include)
 link_directories($ENV{INTELOCLSDKROOT}/lib/${bitness})
-add_executable(Quicksort QuicksortMain.cpp ImageUtils.h OpenCLUtils.h Quicksort.h QuicksortKernels.cl)
+else(WIN32)
+link_directories(/opt/intel/inteloneapi/compiler/latest/linux/lib/ /opt/intel/inteloneapi/compiler/latest/linux/lib/x64)
+endif(WIN32)
+add_executable(Quicksort QuicksortMain.cpp  Quicksort.h OpenCLUtils.h QuicksortKernels.cl)
+if(WIN32)
 target_link_libraries(Quicksort OpenCL)
+else(WIN32)
+target_link_libraries(Quicksort OpenCL tbb pthread stdc++)
+endif(WIN32)
 
 add_test(NAME Quicksort_smoke
          WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-         COMMAND Quicksort 100 gpu intel 2048  2048  how_cl)
+         COMMAND Quicksort 100 gpu intel 2048 2048 no_show_cl)
