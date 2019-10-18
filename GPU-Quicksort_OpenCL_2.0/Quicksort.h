@@ -40,21 +40,13 @@ uint median(uint x1, uint x2, uint x3) {
 		if (x2 < x3) {
 			return x2;
 		} else {
-			if (x1 < x3) {
-				return x3;
-			} else {
-				return x1;
-			}
+                        return select(x1, x3, x1 < x3);
 		}
 	} else { // x1 >= x2
 		if (x1 < x3) {
 			return x1;
 		} else { // x1 >= x3
-			if (x2 < x3) {
-				return x2;
-			} else {
-				return x3;
-			}
+                        return select(x2, x3, x2 < x3);
 		}
 	}
 }

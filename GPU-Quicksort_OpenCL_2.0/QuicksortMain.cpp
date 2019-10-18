@@ -3,18 +3,25 @@
      This software is supplied under the terms of a license agreement or 
      nondisclosure agreement with Intel Corporation and may not be copied 
      or disclosed except in accordance with the terms of that agreement. 
-        Copyright (C) 2014 Intel Corporation. All Rights Reserved.
+        Copyright (C) 2014-2019 Intel Corporation. All Rights Reserved.
 \* ************************************************************************* */
 
 // QuicksortMain.cpp : Defines the entry point for the console application.
 //
 
 #include <stdio.h>
+#ifdef _MSC_VER
+// Windows
 #include <windows.h>
 #include <tchar.h>
+#endif
 #include <assert.h>
 #include <string.h>
-
+#ifndef _MSC_VER
+// Linux
+#include <time.h>
+#include <unistd.h>
+#endif
 #include "OpenCLUtils.h"
 #include <math.h>
 #include <iostream>
@@ -23,6 +30,11 @@
 #include <vector>
 #include <map>
 
+#ifndef _MSC_VER
+// Linux
+#include "tbb/parallel_sort.h"
+using namespace tbb;
+#endif
 // Types:
 typedef unsigned int uint;
 typedef	uint QuicksortFlag;
@@ -30,6 +42,23 @@ typedef	uint QuicksortFlag;
 #define READ_ALIGNMENT  4096 // Intel recommended alignment
 #define WRITE_ALIGNMENT 4096 // Intel recommended alignment
 
+/// return a timestamp with sub-second precision 
+/** QueryPerformanceCounter and clock_gettime have an undefined starting point (null/zero)     
+ *  and can wrap around, i.e. be nulled again. **/ 
+double seconds() { 
+#ifdef _MSC_VER   
+  static LARGE_INTEGER frequency;   
+  if (frequency.QuadPart == 0)     ::QueryPerformanceFrequency(&frequency);   
+  LARGE_INTEGER now;   
+  ::QueryPerformanceCounter(&now);   
+  return now.QuadPart / double(frequency.QuadPart); 
+#else   
+  struct timespec now;   
+  clock_gettime(CLOCK_MONOTONIC, &now);   
+  return now.tv_sec + now.tv_nsec / 1000000000.0; 
+#endif 
+}
+ 
 typedef struct
 {	
 	// CL platform handles:
@@ -229,11 +258,18 @@ void quicksort(T* data, int left, int right)
     int nleft = nright+1;
 
     if (left < nright) {
+      if (nright - left > 32) {
         quicksort(data, left, nright);
-	}
+      } else
+        std::sort(data + left, data + nright + 1);
+    }
 
     if (nleft < right) {
-		quicksort(data, nleft, right); 
+      if (right - nleft > 32)  {
+		    quicksort(data, nleft, right); 
+      } else {
+        std::sort(data + nleft, data + right + 1);
+      }
 	}
 }
 
@@ -285,8 +321,9 @@ int main(int argc, char** argv)
 
 	double totalTime, quickSortTime, stdSortTime;
 
-	LARGE_INTEGER beginClock, endClock, clockFreq;
-	QueryPerformanceFrequency (&clockFreq);
+	//LARGE_INTEGER beginClock, endClock, clockFreq;
+	double beginClock, endClock;
+	//QueryPerformanceFrequency (&clockFreq);
 
 	parseArgs (&myOCL, argc, argv, &NUM_ITERATIONS, pDeviceStr, pVendorStr, &widthReSz, &heightReSz, &bShowCL);
 
@@ -294,18 +331,28 @@ int main(int argc, char** argv)
 	
 	uint arraySize = widthReSz*heightReSz;
 	printf("Allocating array size of %d\n", arraySize);
+#ifdef _MSC_VER 
 	uint* pArray = (uint*)_aligned_malloc (((arraySize*sizeof(uint))/64 + 1)*64, 4096);
 	uint* pArrayCopy = (uint*)_aligned_malloc (((arraySize*sizeof(uint))/64 + 1)*64, 4096);
+#else // _MSC_VER
+	uint* pArray = (uint*)aligned_alloc (4096, ((arraySize*sizeof(uint))/64 + 1)*64);
+	uint* pArrayCopy = (uint*)aligned_alloc (4096, ((arraySize*sizeof(uint))/64 + 1)*64);
+#endif // _MSC_VER
 	// Maximum number of blocks formula adapted to Intel platforms
 	// The heuristic is from Cederman/Tsigas paper
 	// It leads to every block being QUICKSORT_BLOCK_SIZE for large input sizes, 
 	// so MAXSEQ is approximately the number of workgroups for gqsort_kernel
 	// For smaller input sizes (e.g. less than half a million elements), it bottoms out at 256 workgroups
 	const size_t MAXSEQ = optp(arraySize, 0.00009516, 203);
-	const size_t MAX_SIZE = 12*max(MAXSEQ, QUICKSORT_BLOCK_SIZE);
+	const size_t MAX_SIZE = 12*std::max(int(MAXSEQ), QUICKSORT_BLOCK_SIZE);
 
+#ifdef _MSC_VER 
 	work_record* pdone = (work_record*)_aligned_malloc (((MAX_SIZE*sizeof(work_record))/64 + 1)*64, 4096);
 	work_record* pnews = (work_record*)_aligned_malloc (((MAX_SIZE*sizeof(work_record))/64 + 1)*64, 4096);
+#else // _MSC_VER
+	work_record* pdone = (work_record*)aligned_alloc (4096, ((MAX_SIZE*sizeof(work_record))/64 + 1)*64);
+	work_record* pnews = (work_record*)aligned_alloc (4096, ((MAX_SIZE*sizeof(work_record))/64 + 1)*64);
+#endif // _MSC_VER
 
 	std::generate(pArray, pArray + arraySize, [](){static uint i = 0; return ++i; });
 	std::random_shuffle(pArray, pArray + arraySize);
@@ -313,20 +360,21 @@ int main(int argc, char** argv)
 	std::cout << "Sorting the regular way..." << std::endl;
 	std::copy(pArray, pArray + arraySize, pArrayCopy);
 
-	QueryPerformanceCounter (&beginClock);
+  beginClock = seconds();
 	std::sort(pArrayCopy, pArrayCopy + arraySize);
-	QueryPerformanceCounter (&endClock);
-	totalTime = double(endClock.QuadPart - beginClock.QuadPart) / clockFreq.QuadPart;	
+        endClock = seconds();
+	totalTime = endClock - beginClock;
 	std::cout << "Time to sort: " << totalTime * 1000 << " ms" << std::endl;
 	stdSortTime = totalTime;
 
-	std::cout << "Sorting with quicksort on the cpu: " << std::endl;
+	std::cout << "Sorting with parallel quicksort on the cpu: " << std::endl;
 	std::copy(pArray, pArray + arraySize, pArrayCopy);
 
-	QueryPerformanceCounter (&beginClock);
-	quicksort(pArrayCopy, 0, arraySize-1);
-	QueryPerformanceCounter (&endClock);
-	totalTime = double(endClock.QuadPart - beginClock.QuadPart) / clockFreq.QuadPart;
+  beginClock = seconds();
+	//quicksort(pArrayCopy, 0, arraySize-1);
+  parallel_sort(pArrayCopy, pArrayCopy + arraySize);
+  endClock = seconds();
+	totalTime = endClock - beginClock;
 	std::cout << "Time to sort: " << totalTime * 1000 << " ms" << std::endl;
 	quickSortTime = totalTime;
 #ifdef TRUST_BUT_VERIFY
@@ -361,10 +409,10 @@ int main(int argc, char** argv)
 	InitializeOpenCL (pDeviceStr, pVendorStr, &myOCL.deviceID, &myOCL.contextHdl, &myOCL.cmdQHdl, bCPUDevice);
 	if (bShowCL)
 		QueryPrintOpenCLDeviceInfo (myOCL.deviceID, myOCL.contextHdl);	
-	QueryPerformanceCounter (&beginClock);
+        beginClock = seconds();
 	CompileOpenCLProgram (bCPUDevice, myOCL.deviceID, myOCL.contextHdl, pSourceFileStr, &myOCL.programHdl);
-	QueryPerformanceCounter (&endClock);
-	totalTime = double(endClock.QuadPart - beginClock.QuadPart) / clockFreq.QuadPart;
+        endClock = seconds();
+	totalTime = endClock - beginClock;
 	std::cout << "Time to build OpenCL Program: " << totalTime * 1000 << " ms" << std::endl;
 	InstantiateOpenCLKernels (&myOCL, arraySize, MAXSEQ, MAX_SIZE, pdone, pnews, pArray);
 
@@ -382,10 +430,10 @@ int main(int argc, char** argv)
 		std::vector<uint> verify(arraySize);
 		std::copy(pArray, pArray + arraySize, verify.begin());
 
-		QueryPerformanceCounter (&beginClock);
+    beginClock = seconds();
 		GPUQSort(&myOCL, arraySize, pArray, pdone, pnews, MAX_SIZE);
-		QueryPerformanceCounter (&endClock);
-		totalTime = double(endClock.QuadPart - beginClock.QuadPart) / clockFreq.QuadPart;
+                endClock = seconds();
+		totalTime = endClock - beginClock;
 		printf("%4d.", k);
 		std::cout << " Time to sort: " << totalTime * 1000 << " ms" << std::endl;
 		times[k] = totalTime;
@@ -417,8 +465,8 @@ int main(int argc, char** argv)
 	for(uint k = 0; k < NUM_ITERATIONS; k++) 
 	{
 		stdDev += (AverageTime - times[k])*(AverageTime - times[k]);
-		minTime = min(minTime, times[k]);
-		maxTime = max(maxTime, times[k]);
+		minTime = std::min(minTime, times[k]);
+		maxTime = std::max(maxTime, times[k]);
 	}
 
 	if (NUM_ITERATIONS > 1) {
@@ -435,12 +483,17 @@ int main(int argc, char** argv)
 #endif // RUN_CPU_SORTS
 
 	Cleanup(&myOCL, 0, 0, "-------done--------------------------------------------------------\n");
+#ifdef _MSC_VER 
 	_aligned_free(pArray);
 	_aligned_free(pArrayCopy);
 	_aligned_free(pnews);
 	_aligned_free(pdone);
-	getchar();
-	Sleep(2000);
+#else // _MSC_VER
+  free(pArray);
+  free(pArrayCopy);
+  free(pnews);
+  free(pdone); 
+#endif // _MSC_VER
 
 	return 0;
 }

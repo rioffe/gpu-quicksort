@@ -160,7 +160,7 @@ void InitializeOpenCL(char* pDeviceStr, char* pVendorStr, cl_device_id* pDeviceI
 		lang_version = lang_version.substr(std::string("OpenCL C ").length()); 
 		lang_version = lang_version.substr(0, lang_version.find('.')); 
 
-		if (!(stoi(dev_version) >= 2 && stoi(lang_version) >= 2)) {
+		if (!(atoi(dev_version.c_str()) >= 2 && atoi(lang_version.c_str()) >= 2)) {
 			printf("Device does not support OpenCL 2.0 needed for this sample! CL_DEVICE_VERSION: %s, CL_DEVICE_OPENCL_C_VERSION, %s\n", pDevVersion, pLangVersion);
 			exit(-1);
 		}
