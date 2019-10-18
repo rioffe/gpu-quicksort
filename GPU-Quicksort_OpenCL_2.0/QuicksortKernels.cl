@@ -272,7 +272,7 @@ kernel void gqsort_kernel(global uint* d, global uint* dn,
 	lttmp = work_group_scan_exclusive_add(lt);
 	// the following barrier is here due to bug in the driver
 	// please remove when updating to a new version of OpenCL 2.0 driver
-	barrier(CLK_LOCAL_MEM_FENCE);
+	// barrier(CLK_LOCAL_MEM_FENCE);
 	gttmp = work_group_scan_exclusive_add(gt);
 
 	if (localid == (GQSORT_LOCAL_WORKGROUP_SIZE - 1)) { // last work
@@ -327,10 +327,10 @@ kernel void gqsort_kernel(global uint* d, global uint* dn,
 			lpivot = sn[oldstart];
 			gpivot = sn[oldend-1];
 			if (oldstart < sstart) {
-				lpivot = median(lpivot,sn[(oldstart+sstart)/2], sn[sstart-1]);
+				lpivot = median(lpivot,sn[(oldstart+sstart) >> 1], sn[sstart-1]);
 			} 
 			if (send < oldend) {
-				gpivot = median(sn[send],sn[(oldend+send)/2], gpivot);
+				gpivot = median(sn[send],sn[(oldend+send) >> 1], gpivot);
 			}
 
 			global work_record* result1 = result + 2*blockid;
@@ -451,7 +451,7 @@ kernel void lqsort_kernel(global uint* d, global uint* dn, global work_record* s
 		// Pick a pivot
 		uint pivot = s[start];
 		if (start < end) {
-			pivot = median(pivot, s[(start+end)/2], s[end-1]);
+			pivot = median(pivot, s[(start+end) >> 1], s[end-1]);
 		}
 		// Align work item accesses for coalesced reads.
 		// Go through data...
