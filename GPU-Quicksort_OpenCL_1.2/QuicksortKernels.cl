@@ -16,25 +16,26 @@ void plus_prescan(local uint *a, local uint *b) {
 }
 
 /// bitonic_sort: sort 2*LOCAL_THREADCOUNT elements
-void bitonic_sort(local uint* sh_data, const uint local_idx) {
+void bitonic_sort(local uint* sh_data, const uint localid)
+{
 	for (uint ulevel = 1; ulevel < LQSORT_LOCAL_WORKGROUP_SIZE; ulevel <<= 1) {
         for (uint j = ulevel; j > 0; j >>= 1) {
-            uint pos = 2*local_idx - (local_idx & (j - 1));
+            uint pos = 2*localid - (localid & (j - 1));
 
-			uint direction = local_idx & ulevel;
+			uint direction = localid & ulevel;
 			uint av = sh_data[pos], bv = sh_data[pos + j];
 			const bool sortThem = av > bv;
-			const uint greater = select(av, bv, sortThem);
-			const uint lesser  = select(bv, av, sortThem);
+			const uint greater = select(bv, av, sortThem);
+			const uint lesser  = select(av, bv, sortThem);
 
-			sh_data[pos]     = select(greater, lesser, direction);
-			sh_data[pos + j] = select(lesser, greater, direction);
+			sh_data[pos]     = select(lesser, greater, direction);
+			sh_data[pos + j] = select(greater, lesser, direction);
             barrier(CLK_LOCAL_MEM_FENCE);
         }
     }
 
 	for (uint j = LQSORT_LOCAL_WORKGROUP_SIZE; j > 0; j >>= 1) {
-        uint pos = 2*local_idx - (local_idx & (j - 1));
+        uint pos = 2*localid - (localid & (j - 1));
 
 		uint av = sh_data[pos], bv = sh_data[pos + j];
 		const bool sortThem = av > bv;
@@ -47,7 +48,8 @@ void bitonic_sort(local uint* sh_data, const uint local_idx) {
 
 void sort_threshold(local uint* data_in, global uint* data_out,
 					uint start, 
-					uint end, local uint* temp, uint localid) {
+					uint end, local uint* temp, uint localid) 
+{
 	uint tsum = end - start;
 	if (tsum == SORT_THRESHOLD) {
 		bitonic_sort(data_in+start, localid);
@@ -78,20 +80,23 @@ void sort_threshold(local uint* data_in, global uint* data_out,
 //----------------------------------------------------------------------------
 kernel void gqsort_kernel(global uint* d, global uint*dn, global block_record* blocks, global parent_record* parents, global work_record* result) 
 {
-	const uint blockid     = get_group_id(0);
+	const uint blockid    = get_group_id(0);
 	const uint localid    = get_local_id(0);
 	local uint lt[GQSORT_LOCAL_WORKGROUP_SIZE+1], gt[GQSORT_LOCAL_WORKGROUP_SIZE+1], ltsum, gtsum, lbeg, gbeg;
 	uint i, lfrom, gfrom, lpivot, gpivot, tmp, ltp = 0, gtp = 0;
 
-	// Get the sequence block assigned to this thread block
+	// Get the sequence block assigned to this work group
 	block_record block = blocks[blockid];
 	uint start = block.start, end = block.end, pivot = block.pivot, direction = block.direction;
 
-	//printf("blockid %d, start %d, end %d, pivot %d, direction %d\n", blockid, start, end, pivot, direction);
 	global parent_record* pparent = parents + block.parent; 
 	global uint* psstart, *psend, *poldstart, *poldend, *pblockcount;
 	global uint *s, *sn;
 
+	// GPU-Quicksort cannot sort in place, as the regular quicksort algorithm can.
+	// It therefore needs two arrays to sort things out. We start sorting in the 
+	// direction of d -> dn and then change direction after each run of gqsort_kernel.
+	// Which direction we are sorting: d -> dn or dn -> d?
 	if (direction == 1) {
 		s = d;
 		sn = dn;
@@ -105,9 +110,8 @@ kernel void gqsort_kernel(global uint* d, global uint*dn, global block_record* b
 	barrier(CLK_LOCAL_MEM_FENCE);
 
 	// Align thread accesses for coalesced reads.
-	i = start + localid;
 	// Go through data...
-	for(; i < end; i += GQSORT_LOCAL_WORKGROUP_SIZE) {
+	for(i = start + localid; i < end; i += GQSORT_LOCAL_WORKGROUP_SIZE) {
 		tmp = s[i];
 		// counting elements that are smaller ...
 		if (tmp < pivot)
@@ -161,13 +165,13 @@ kernel void gqsort_kernel(global uint* d, global uint*dn, global block_record* b
 		gbeg = atomic_sub(psend, gtsum) - gtsum;
 	}
 	barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
-	// Allocate locations for threads
+
+	// Allocate locations for work items
 	lfrom = lbeg + lt[localid];
 	gfrom = gbeg + gt[localid];
 
 	// go thru data again writing elements to their correct position
-	i = start + localid;
-	for(; i < end; i += GQSORT_LOCAL_WORKGROUP_SIZE) {
+	for(i = start + localid; i < end; i += GQSORT_LOCAL_WORKGROUP_SIZE) {
 		tmp = s[i];
 		// increment counts
 		if (tmp < pivot) 
@@ -189,17 +193,20 @@ kernel void gqsort_kernel(global uint* d, global uint*dn, global block_record* b
 			for(i = sstart; i < send; i ++) {
 				d[i] = pivot;
 			}
+
 			lpivot = sn[oldstart];
 			gpivot = sn[oldend-1];
 			if (oldstart < sstart) {
-				lpivot = median(lpivot,sn[(oldstart+sstart)/2], sn[sstart-1]);
+				lpivot = median(lpivot,sn[(oldstart+sstart) >> 1], sn[sstart-1]);
 			} 
 			if (send < oldend) {
-				gpivot = median(sn[send],sn[(oldend+send)/2], gpivot);
+				gpivot = median(sn[send],sn[(oldend+send) >> 1], gpivot);
 			}
 
 			global work_record* result1 = result + 2*blockid;
 			global work_record* result2 = result1 + 1;
+			
+			// change the direction of the sort.
 			direction ^= 1;
 
 			work_record r1 = {oldstart, sstart, lpivot, direction};
@@ -225,6 +232,7 @@ typedef struct workstack_record {
 									} \
 									barrier(CLK_LOCAL_MEM_FENCE);
 
+
 //---------------------------------------------------------------------------------------
 // Kernel implements the last stage of GPU-Quicksort, when all the subsequences are small
 // enough to be processed in local memory. It uses similar algorithm to gqsort_kernel to 
@@ -238,8 +246,8 @@ typedef struct workstack_record {
 //---------------------------------------------------------------------------------------
 kernel void lqsort_kernel(global uint* d, global uint* dn, global work_record* seqs) 
 {
-	const uint blockid     = get_group_id(0);
-	const uint localid     = get_local_id(0);
+	const uint blockid    = get_group_id(0);
+	const uint localid    = get_local_id(0);
 
 	// workstack: stores the start and end of the sequences, direction of sort
 	// If the sequence is less that SORT_THRESHOLD, it gets sorted. 
@@ -249,18 +257,19 @@ kernel void lqsort_kernel(global uint* d, global uint* dn, global work_record* s
 	// but each individual record should be greater than SORT_THRESHOLD, so the maximum length 
 	// of the stack is QUICKSORT_BLOCK_SIZE/SORT_THRESHOLD - in the case of BDW GT2 the length 
 	// of the stack is 2 :)
-	local workstack_record workstack[QUICKSORT_BLOCK_SIZE/SORT_THRESHOLD]; // 
+	local workstack_record workstack[QUICKSORT_BLOCK_SIZE/SORT_THRESHOLD]; 
 	local int workstack_pointer;
 
-	local uint mys[QUICKSORT_BLOCK_SIZE], mysn[QUICKSORT_BLOCK_SIZE];
+	local uint mys[QUICKSORT_BLOCK_SIZE], mysn[QUICKSORT_BLOCK_SIZE], temp[SORT_THRESHOLD];
 	local uint *s, *sn;
-	local uint lt[LQSORT_LOCAL_WORKGROUP_SIZE+1], gt[LQSORT_LOCAL_WORKGROUP_SIZE+1], ltsum, gtsum;
-	local uint temp[SORT_THRESHOLD];
+  local uint ltsum, gtsum;
+	local uint lt[LQSORT_LOCAL_WORKGROUP_SIZE+1], gt[LQSORT_LOCAL_WORKGROUP_SIZE+1];
 	uint i, tmp, ltp, gtp;
 	
-	const uint d_offset = seqs[blockid].start;
+	work_record block = seqs[blockid];
+	const uint d_offset = block.start;
 	uint start = 0; 
-	uint end   = seqs[blockid].end - d_offset;
+	uint end   = block.end - d_offset;
 
 	uint direction = 1; // which direction to sort
 	// initialize workstack and workstack_pointer: push the initial sequence on the stack
@@ -271,7 +280,7 @@ kernel void lqsort_kernel(global uint* d, global uint* dn, global work_record* s
 	}
 	// copy block of data to be sorted by one workgroup into local memory
 	// note that indeces of local data go from 0 to end-start-1
-	if (seqs[blockid].direction == 1) {
+	if (block.direction == 1) {
 		for (i = localid; i < end; i += LQSORT_LOCAL_WORKGROUP_SIZE) {
 			mys[i] = d[i+d_offset];
 		}
@@ -309,13 +318,11 @@ kernel void lqsort_kernel(global uint* d, global uint* dn, global work_record* s
 		// Pick a pivot
 		uint pivot = s[start];
 		if (start < end) {
-			pivot = median(pivot, s[(start+end)/2], s[end-1]);
+			pivot = median(pivot, s[(start+end) >> 1], s[end-1]);
 		}
-		
-		// Align thread accesses for coalesced reads.
-		i = start + localid;
+		// Align work item accesses for coalesced reads.
 		// Go through data...
-		for(; i < end; i += LQSORT_LOCAL_WORKGROUP_SIZE) {
+		for(i = start + localid; i < end; i += LQSORT_LOCAL_WORKGROUP_SIZE) {
 			tmp = s[i];
 			// counting elements that are smaller ...
 			if (tmp < pivot)
@@ -355,13 +362,12 @@ kernel void lqsort_kernel(global uint* d, global uint* dn, global work_record* s
 			barrier(CLK_LOCAL_MEM_FENCE);
 		}
 
-		// Allocate locations for threads
+		// Allocate locations for work items
 		uint lfrom = start + lt[localid];
 		uint gfrom = end - gt[localid+1];
 
 		// go thru data again writing elements to their correct position
-		i = start + localid;
-		for (; i < end; i += LQSORT_LOCAL_WORKGROUP_SIZE) {
+		for (i = start + localid; i < end; i += LQSORT_LOCAL_WORKGROUP_SIZE) {
 			tmp = s[i];
 			// increment counts
 			if (tmp < pivot) 
@@ -373,13 +379,13 @@ kernel void lqsort_kernel(global uint* d, global uint* dn, global work_record* s
 		barrier(CLK_LOCAL_MEM_FENCE);
 
 		// Store the pivot value between the new sequences
-		i = start + ltsum + localid;
-		for (;i < end - gtsum; i += LQSORT_LOCAL_WORKGROUP_SIZE) {
+		for (i = start + ltsum + localid;i < end - gtsum; i += LQSORT_LOCAL_WORKGROUP_SIZE) {
 			d[i+d_offset] = pivot;
 		}
 		barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
 
-		// fill in pivot, produce two new sequences
+		// if the sequence is shorter than SORT_THRESHOLD
+		// sort it using an alternative sort and place result in d
 		if (ltsum <= SORT_THRESHOLD) {
 			sort_threshold(sn, d+d_offset, start, start + ltsum, temp, localid);
 		} else {

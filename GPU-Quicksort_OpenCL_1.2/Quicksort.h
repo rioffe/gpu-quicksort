@@ -40,21 +40,13 @@ uint median(uint x1, uint x2, uint x3) {
 		if (x2 < x3) {
 			return x2;
 		} else {
-			if (x1 < x3) {
-				return x3;
-			} else {
-				return x1;
-			}
+      return select(x1, x3, x1 < x3);
 		}
 	} else { // x1 >= x2
 		if (x1 < x3) {
 			return x1;
 		} else { // x1 >= x3
-			if (x2 < x3) {
-				return x2;
-			} else {
-				return x3;
-			}
+      return select(x2, x3, x2 < x3);
 		}
 	}
 }
@@ -81,6 +73,9 @@ uint median(uint x1, uint x2, uint x3) {
 
 #define EMPTY_RECORD             42
 
+// work record contains info about the part of array that is still longer than QUICKSORT_BLOCK_SIZE and 
+// therefore cannot be processed by lqsort_kernel yet. It contins the start and the end indexes into 
+// an array to be sorted, associated pivot and direction of the sort. 
 typedef struct work_record {
 	uint start;
 	uint end;
@@ -94,6 +89,12 @@ typedef struct work_record {
 #endif // HOST
 } work_record;
 
+
+// parent record contains everything kernels need to know about the parent of a set of blocks:
+// initially, the first two fields equal to the third and fourth fields respectively
+// blockcount contains the total number of blocks associated with the parent.
+// During processing, sstart and send get incremented. At the end of gqsort_kernel, all the 
+// parent record fields are used to calculate new pivots and new work records.
 typedef struct parent_record {
 	uint sstart, send, oldstart, oldend, blockcount; 
 #ifdef HOST
@@ -102,6 +103,8 @@ typedef struct parent_record {
 #endif // HOST
 } parent_record;
 
+// block record contains everything kernels needs to know about the block:
+// start and end indexes into input array, pivot, direction of sorting and the parent record index
 typedef struct block_record {
 	uint start;
 	uint end;
@@ -109,6 +112,7 @@ typedef struct block_record {
 	uint direction;
 	uint parent;
 #ifdef HOST
+	block_record() : start(0), end(0), pivot(0), direction(EMPTY_RECORD), parent(0) {}
 	block_record(uint s, uint e, uint p, uint d, uint prnt) : 
 		start(s), end(e), pivot(p), direction(d), parent(prnt) {}
 #endif // HOST
