@@ -81,7 +81,7 @@ typedef struct
 // Globals:
 cl_int		ciErrNum;
 
-void Cleanup(OCLResources* pOCL, int iExitCode, bool bExit, char* optionalErrorMessage)
+void Cleanup(OCLResources* pOCL, int iExitCode, bool bExit, const char* optionalErrorMessage)
 {
 	if (optionalErrorMessage) 
 		printf ("%s\n", optionalErrorMessage);
@@ -159,7 +159,7 @@ void parseArgs(OCLResources* pOCL, int argc, char** argv, unsigned int* test_ite
 	
 	if (argc != 7)
 	{
-		Cleanup (pOCL, -1, true, (char *) sUsageString);
+		Cleanup (pOCL, -1, true, sUsageString);
 	}
 	else
 	{
