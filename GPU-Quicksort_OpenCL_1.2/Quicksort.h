@@ -52,23 +52,19 @@ uint median(uint x1, uint x2, uint x3) {
 }
 #endif //HOST
 
-//#define HASWELL 1
-//#define GET_DETAILED_PERFORMANCE 1
 #define TRUST_BUT_VERIFY 1
-// Note that SORT_THRESHOLD should always be 2X LOCAL_THREADCOUNT due to the use of bitonic sort
-// Always try LOCAL_THREADCOUNT to be 8X smaller than QUICKSORT_BLOCK_SIZE - then try everything else :)
-#ifdef HASWELL
+// Note that SORT_THRESHOLD should always be 2X LQSORT_LOCAL_WORKGROUP_SIZE due to the use of bitonic sort
+// Always try LQSORT_LOCAL_WORKGROUP_SIZE to be 8X smaller than QUICKSORT_BLOCK_SIZE - then try everything else :)
+#ifdef CPU_DEVICE
 #define QUICKSORT_BLOCK_SIZE         1024 
 #define GQSORT_LOCAL_WORKGROUP_SIZE   128 
 #define LQSORT_LOCAL_WORKGROUP_SIZE   128 
 #define SORT_THRESHOLD                256 
-#define PRIVATE_SORT_THRESHOLD         12
 #else
 #define QUICKSORT_BLOCK_SIZE         1024 
 #define GQSORT_LOCAL_WORKGROUP_SIZE   128 
 #define LQSORT_LOCAL_WORKGROUP_SIZE   256 
 #define SORT_THRESHOLD                512 
-#define PRIVATE_SORT_THRESHOLD         10
 #endif
 
 #define EMPTY_RECORD             42

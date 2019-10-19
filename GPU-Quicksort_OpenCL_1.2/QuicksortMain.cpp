@@ -446,12 +446,13 @@ int main(int argc, char** argv)
 #endif // RUN_CPU_SORTS
 
 	// Initialize OpenCL:
-	InitializeOpenCL (pDeviceStr, pVendorStr, &myOCL.deviceID, &myOCL.contextHdl, &myOCL.cmdQHdl);
+	bool bCPUDevice;
+	InitializeOpenCL (pDeviceStr, pVendorStr, &myOCL.deviceID, &myOCL.contextHdl, &myOCL.cmdQHdl, bCPUDevice);
 	if (bShowCL)
 		QueryPrintOpenCLDeviceInfo (myOCL.deviceID, myOCL.contextHdl);	
-	beginClock = seconds();
-	CompileOpenCLProgram (myOCL.deviceID, myOCL.contextHdl, pSourceFileStr, &myOCL.programHdl);
-	endClock = seconds();
+        beginClock = seconds();
+	CompileOpenCLProgram (bCPUDevice, myOCL.deviceID, myOCL.contextHdl, pSourceFileStr, &myOCL.programHdl);
+        endClock = seconds();
 	totalTime = endClock - beginClock;
 	std::cout << "Time to build OpenCL Program: " << totalTime * 1000 << " ms" << std::endl;
 	InstantiateOpenCLKernels (&myOCL);

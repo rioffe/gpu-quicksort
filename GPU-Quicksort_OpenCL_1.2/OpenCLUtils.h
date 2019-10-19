@@ -11,9 +11,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/types.h>
-#include <sys/timeb.h>
 #include <CL/cl.h>
+#include <string>
+
 
 // Util for error checking:
 //#undef __OCL_NO_ERROR_CHECKING
@@ -62,7 +62,7 @@ void BuildFailLog( cl_program program,
 }
 
 
-void InitializeOpenCL(char* pDeviceStr, char* pVendorStr, cl_device_id* pDeviceID, cl_context* pContextHdl, cl_command_queue* pCmdQHdl)
+void InitializeOpenCL(char* pDeviceStr, char* pVendorStr, cl_device_id* pDeviceID, cl_context* pContextHdl, cl_command_queue* pCmdQHdl, bool& bCPUDevice)
 {	
 	// OpenCL System Initialization
 
@@ -76,12 +76,15 @@ void InitializeOpenCL(char* pDeviceStr, char* pVendorStr, cl_device_id* pDeviceI
 	CheckCLError (ciErrNum, "No platforms Found.", "OpenCL platforms found.");
 
 	char				pPlatformVendor[256];
+	char                pDevVersion[256];
+	char                pLangVersion[256];
 	cl_platform_id		platformID	= NULL;
 	
 	cl_device_id		deviceID;
 	cl_context			contextHdl;
 	cl_command_queue	cmdQueueHdl;
 
+	bCPUDevice = false;
 	if (0 < numPlatforms) 
 	{
 		cl_platform_id		*pPlatformIDs = (cl_platform_id*)malloc(sizeof(cl_platform_id)*numPlatforms);
@@ -108,8 +111,10 @@ void InitializeOpenCL(char* pDeviceStr, char* pVendorStr, cl_device_id* pDeviceI
 			}
 			if ((!strcmp(pPlatformVendor, "Intel Corporation")|| !strcmp(pPlatformVendor, "Intel(R) Corporation")) && !strcmp(pVendorStr, "intel") && !strcmp(pDeviceStr, "cpu"))
 			{
-				if(CL_SUCCESS == clGetDeviceIDs(platformID, CL_DEVICE_TYPE_CPU, 1, &deviceID, NULL))
+				if(CL_SUCCESS == clGetDeviceIDs(platformID, CL_DEVICE_TYPE_CPU, 1, &deviceID, NULL)) {
+					bCPUDevice = true;
 					break;
+				}
 			}
 			if (!strcmp(pPlatformVendor, "Advanced Micro Devices, Inc.") && !strcmp(pVendorStr, "amd") && !strcmp(pDeviceStr, "gpu") )
 			{
@@ -130,6 +135,35 @@ void InitializeOpenCL(char* pDeviceStr, char* pVendorStr, cl_device_id* pDeviceI
 			exit(-1);
 		}
 		free(pPlatformIDs);
+
+		ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_VERSION, sizeof(pDevVersion), pDevVersion, NULL);
+		if (CL_SUCCESS != ciErrNum) {
+			printf("Error: couldn't get CL_DEVICE_VERSION!\n");
+			exit(-1);
+		}
+		ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_OPENCL_C_VERSION, sizeof(pLangVersion), pLangVersion, NULL);
+		if (CL_SUCCESS != ciErrNum) {
+			printf("Error: couldn't get CL_DEVICE_OPENCL_C_VERSION!\n");
+			exit(-1);
+		}
+
+		// Courtesy Aaron Kunze
+		// The format of the version string is defined in the spec as 
+		// "OpenCL <major>.<minor> <vendor-specific>" 
+		std::string dev_version(pDevVersion);
+		std::string lang_version(pLangVersion);
+		dev_version = dev_version.substr(std::string("OpenCL ").length()); 
+		dev_version = dev_version.substr(0, dev_version.find('.')); 
+
+		// The format of the version string is defined in the spec as 
+		// "OpenCL C <major>.<minor> <vendor-specific>" 
+		lang_version = lang_version.substr(std::string("OpenCL C ").length()); 
+		lang_version = lang_version.substr(0, lang_version.find('.')); 
+
+		if (!(atoi(dev_version.c_str()) >= 2 && atoi(lang_version.c_str()) >= 2)) {
+			printf("Device does not support OpenCL 2.0 needed for this sample! CL_DEVICE_VERSION: %s, CL_DEVICE_OPENCL_C_VERSION, %s\n", pDevVersion, pLangVersion);
+			exit(-1);
+		}
 	}
 	else 
 	{
@@ -146,7 +180,7 @@ void InitializeOpenCL(char* pDeviceStr, char* pVendorStr, cl_device_id* pDeviceI
 	CheckCLError (ciErrNum, "Could not create CL command queue.", "Created CL command queue.");
 
 	// The recommended minimum size of the device queue is 128K - enough for our purposes, since the algorithm enqueues only one kernel at a time
-	cl_queue_properties qprop[] = {CL_QUEUE_SIZE, 128*1024, CL_QUEUE_PROPERTIES, (cl_command_queue_properties)(CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE | CL_QUEUE_ON_DEVICE | CL_QUEUE_ON_DEVICE_DEFAULT), 0}; // CL_QUEUE_ON_DEVICE –
+	cl_queue_properties qprop[] = {CL_QUEUE_SIZE, 128*1024, CL_QUEUE_PROPERTIES, (cl_command_queue_properties)(CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE | CL_QUEUE_ON_DEVICE | CL_QUEUE_ON_DEVICE_DEFAULT | CL_QUEUE_PROFILING_ENABLE), 0}; // CL_QUEUE_ON_DEVICE –
     cl_command_queue my_device_q = clCreateCommandQueueWithProperties(contextHdl, deviceID, qprop, &ciErrNum);
 	CheckCLError (ciErrNum, "Could not create device side queue.", "Device side queue created.");
 
@@ -186,11 +220,13 @@ void CreateOCLProgramFromSourceFile(char const *pSrcFilePath, cl_context hClCont
         size_t records_read = fread(buf, size, 1, fp);
 		if (records_read != 1) {
 			printf("Failed to read the file: %s\n", pSrcFilePath);
+			free(buf);
 			exit(-1);
 		}
         int err = fclose(fp);
 		if (err != 0) {
 			printf("Failed to close the file: %s\n", pSrcFilePath);
+			free(buf);
 			exit(-1);
 		}
 
@@ -202,9 +238,7 @@ void CreateOCLProgramFromSourceFile(char const *pSrcFilePath, cl_context hClCont
         free(buf);
 }
 
-//#define HASWELL 1
-
-void CompileOpenCLProgram(cl_device_id oclDeviceID, cl_context oclContextHdl, const char* pSourceFileStr, cl_program* pOclProgramHdl)
+void CompileOpenCLProgram(bool bCPUDevice, cl_device_id oclDeviceID, cl_context oclContextHdl, const char* pSourceFileStr, cl_program* pOclProgramHdl)
 {
 	cl_int		ciErrNum;
 	cl_program	oclProgramHdl;
@@ -213,10 +247,11 @@ void CompileOpenCLProgram(cl_device_id oclDeviceID, cl_context oclContextHdl, co
 
 	CreateOCLProgramFromSourceFile(pSourceFileStr, oclContextHdl, &oclProgramHdl);
 
-	char flags[1024];
-	sprintf(flags, "-cl-mad-enable");
-
-    ciErrNum = clBuildProgram(oclProgramHdl, 0, NULL, flags, NULL, NULL);
+	if (bCPUDevice) {
+		ciErrNum = clBuildProgram(oclProgramHdl, 0, NULL, "-cl-std=CL1.2 -cl-mad-enable -DCPU_DEVICE=1", NULL, NULL);
+	} else {
+		ciErrNum = clBuildProgram(oclProgramHdl, 0, NULL, "-cl-std=CL1.2 -cl-mad-enable", NULL, NULL);
+	}
 	if (ciErrNum != CL_SUCCESS)
 	{
 		printf("ERROR: Failed to build program... ciErrNum = %d\n", ciErrNum);
@@ -290,13 +325,13 @@ void QueryPrintOpenCLDeviceInfo(cl_device_id deviceID, cl_context contextHdl)
 
 	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_MAX_WORK_ITEM_SIZES, sizeof(uMaxWorkItemSizes), &uMaxWorkItemSizes, &uNumBytes);
 	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	printf ("CL_DEVICE_MAX_WORK_ITEM_SIZES		:    (%5d, %5d, %5d)%\n", 
+	printf ("CL_DEVICE_MAX_WORK_ITEM_SIZES		:    (%5zu, %5zu, %5zu)\n", 
 					uMaxWorkItemSizes[0],uMaxWorkItemSizes[1], uMaxWorkItemSizes[2]);
 	
 	size_t	uMaxWorkGroupSize;
 	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size_t), &uMaxWorkGroupSize, &uNumBytes);
 	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	printf ("CL_DEVICE_MAX_WORK_GROUP_SIZE		:%8d\n", uMaxWorkGroupSize);
+	printf ("CL_DEVICE_MAX_WORK_GROUP_SIZE		:%8zu\n", uMaxWorkGroupSize);
 
 	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_MEM_BASE_ADDR_ALIGN, sizeof(cl_uint), &uMinBaseAddrAlignSizeBits, &uNumBytes);
 	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");

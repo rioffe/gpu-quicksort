@@ -236,9 +236,8 @@ typedef struct workstack_record {
 //---------------------------------------------------------------------------------------
 // Kernel implements the last stage of GPU-Quicksort, when all the subsequences are small
 // enough to be processed in local memory. It uses similar algorithm to gqsort_kernel to 
-// move items around the pivot and then switches to either bitonic sort for sequences in
-// the range (PRIVATE_SORT_THRESHOLD, SORT_THRESHOLD] or shell sort for small sequences in
-// the range [1, PRIVATE_SORT_THRESHOLD].
+// move items around the pivot and then switches to bitonic sort for sequences in
+// the range [1, SORT_THRESHOLD] 
 //
 // d - input array
 // dn - scratch array of the same size as the input array
