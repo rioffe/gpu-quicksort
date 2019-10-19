@@ -176,7 +176,7 @@ void InitializeOpenCL(char* pDeviceStr, char* pVendorStr, cl_device_id* pDeviceI
 	CheckCLError (ciErrNum, "Could not create CL context.", "Created CL context.");
 
     // Create a command-queue
-    cmdQueueHdl = clCreateCommandQueue(contextHdl, deviceID, 0, &ciErrNum);
+    cmdQueueHdl = clCreateCommandQueueWithProperties(contextHdl, deviceID, 0, &ciErrNum);
 	CheckCLError (ciErrNum, "Could not create CL command queue.", "Created CL command queue.");
 
 	// The recommended minimum size of the device queue is 128K - enough for our purposes, since the algorithm enqueues only one kernel at a time
@@ -325,13 +325,13 @@ void QueryPrintOpenCLDeviceInfo(cl_device_id deviceID, cl_context contextHdl)
 
 	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_MAX_WORK_ITEM_SIZES, sizeof(uMaxWorkItemSizes), &uMaxWorkItemSizes, &uNumBytes);
 	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	printf ("CL_DEVICE_MAX_WORK_ITEM_SIZES		:    (%5d, %5d, %5d)%\n", 
+	printf ("CL_DEVICE_MAX_WORK_ITEM_SIZES		:    (%5zu, %5zu, %5zu)\n", 
 					uMaxWorkItemSizes[0],uMaxWorkItemSizes[1], uMaxWorkItemSizes[2]);
 	
 	size_t	uMaxWorkGroupSize;
 	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size_t), &uMaxWorkGroupSize, &uNumBytes);
 	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	printf ("CL_DEVICE_MAX_WORK_GROUP_SIZE		:%8d\n", uMaxWorkGroupSize);
+	printf ("CL_DEVICE_MAX_WORK_GROUP_SIZE		:%8zu\n", uMaxWorkGroupSize);
 
 	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_MEM_BASE_ADDR_ALIGN, sizeof(cl_uint), &uMinBaseAddrAlignSizeBits, &uNumBytes);
 	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");

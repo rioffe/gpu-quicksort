@@ -176,7 +176,7 @@ void InitializeOpenCL(char* pDeviceStr, char* pVendorStr, cl_device_id* pDeviceI
 	CheckCLError (ciErrNum, "Could not create CL context.", "Created CL context.");
 
     // Create a command-queue
-    cmdQueueHdl = clCreateCommandQueue(contextHdl, deviceID, 0, &ciErrNum);
+    cmdQueueHdl = clCreateCommandQueueWithProperties(contextHdl, deviceID, 0, &ciErrNum);
 	CheckCLError (ciErrNum, "Could not create CL command queue.", "Created CL command queue.");
 
 	// The recommended minimum size of the device queue is 128K - enough for our purposes, since the algorithm enqueues only one kernel at a time
