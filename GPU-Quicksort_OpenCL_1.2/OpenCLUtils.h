@@ -61,6 +61,7 @@ void BuildFailLog( cl_program program,
 	}
 }
 
+static bool isNvidiaGpu = false;
 
 void InitializeOpenCL(char* pDeviceStr, char* pVendorStr, cl_device_id* pDeviceID, cl_context* pContextHdl, cl_command_queue* pCmdQHdl, bool& bCPUDevice)
 {	
@@ -123,8 +124,10 @@ void InitializeOpenCL(char* pDeviceStr, char* pVendorStr, cl_device_id* pDeviceI
 			}
 			if (!strcmp(pPlatformVendor, "NVIDIA Corporation") && !strcmp(pVendorStr, "nvidia") && !strcmp(pDeviceStr, "gpu") )
 			{
-				if(CL_SUCCESS == clGetDeviceIDs(platformID, CL_DEVICE_TYPE_GPU, 1, &deviceID, NULL))
+				if(CL_SUCCESS == clGetDeviceIDs(platformID, CL_DEVICE_TYPE_GPU, 1, &deviceID, NULL)) {
+          isNvidiaGpu = true;
 					break;
+        }
 			}
 		}
 
@@ -178,16 +181,6 @@ void InitializeOpenCL(char* pDeviceStr, char* pVendorStr, cl_device_id* pDeviceI
     // Create a command-queue
     cmdQueueHdl = clCreateCommandQueueWithProperties(contextHdl, deviceID, 0, &ciErrNum);
 	CheckCLError (ciErrNum, "Could not create CL command queue.", "Created CL command queue.");
-
-	// The recommended minimum size of the device queue is 128K - enough for our purposes, since the algorithm enqueues only one kernel at a time
-	cl_queue_properties qprop[] = {CL_QUEUE_SIZE, 128*1024, CL_QUEUE_PROPERTIES, (cl_command_queue_properties)(CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE | CL_QUEUE_ON_DEVICE | CL_QUEUE_ON_DEVICE_DEFAULT | CL_QUEUE_PROFILING_ENABLE), 0}; // CL_QUEUE_ON_DEVICE –
-    cl_command_queue my_device_q = clCreateCommandQueueWithProperties(contextHdl, deviceID, qprop, &ciErrNum);
-	CheckCLError (ciErrNum, "Could not create device side queue.", "Device side queue created.");
-
-	int default_queue_size = 0;
-	ciErrNum = clGetCommandQueueInfo(my_device_q, CL_QUEUE_SIZE, sizeof(int), &default_queue_size, 0);
-	CheckCLError (ciErrNum, "Could not get device side queue info.", "Device side queue info fetched successfully.");
-	printf("CL_QUEUE_SIZE is %d\n", default_queue_size);
 
 	// Output parameters:
 	*pDeviceID		= deviceID;
@@ -250,7 +243,11 @@ void CompileOpenCLProgram(bool bCPUDevice, cl_device_id oclDeviceID, cl_context 
 	if (bCPUDevice) {
 		ciErrNum = clBuildProgram(oclProgramHdl, 0, NULL, "-cl-std=CL1.2 -cl-mad-enable -DCPU_DEVICE=1", NULL, NULL);
 	} else {
-		ciErrNum = clBuildProgram(oclProgramHdl, 0, NULL, "-cl-std=CL1.2 -cl-mad-enable", NULL, NULL);
+    if (isNvidiaGpu) {
+		  ciErrNum = clBuildProgram(oclProgramHdl, 0, NULL, "-cl-std=CL1.2 -cl-mad-enable -DNVIDIA_GPU=1", NULL, NULL);
+    } else {
+		  ciErrNum = clBuildProgram(oclProgramHdl, 0, NULL, "-cl-std=CL1.2 -cl-mad-enable", NULL, NULL);
+    }
 	}
 	if (ciErrNum != CL_SUCCESS)
 	{

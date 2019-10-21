@@ -61,10 +61,19 @@ uint median(uint x1, uint x2, uint x3) {
 #define LQSORT_LOCAL_WORKGROUP_SIZE   128 
 #define SORT_THRESHOLD                256 
 #else
+#ifdef NVIDIA_GPU
+// best for NVidia; 
 #define QUICKSORT_BLOCK_SIZE         1024 
-#define GQSORT_LOCAL_WORKGROUP_SIZE   128 
+#define GQSORT_LOCAL_WORKGROUP_SIZE   128
 #define LQSORT_LOCAL_WORKGROUP_SIZE   256 
 #define SORT_THRESHOLD                512 
+#else // NVIDIA_GPU
+// best for Intel; 
+#define QUICKSORT_BLOCK_SIZE         1728 
+#define GQSORT_LOCAL_WORKGROUP_SIZE   128 
+#define LQSORT_LOCAL_WORKGROUP_SIZE   128 
+#define SORT_THRESHOLD                256 
+#endif // NVIDIA_GPU
 #endif
 
 #define EMPTY_RECORD             42
