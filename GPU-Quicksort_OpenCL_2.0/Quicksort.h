@@ -62,9 +62,9 @@ uint median(uint x1, uint x2, uint x3) {
 #define SORT_THRESHOLD                  8 
 #else 
 #define QUICKSORT_BLOCK_SIZE         1536 
-#define GQSORT_LOCAL_WORKGROUP_SIZE   256 
-#define LQSORT_LOCAL_WORKGROUP_SIZE   256 
-#define SORT_THRESHOLD                512 
+#define GQSORT_LOCAL_WORKGROUP_SIZE   128 
+#define LQSORT_LOCAL_WORKGROUP_SIZE   128 
+#define SORT_THRESHOLD                256 
 #endif
 
 #define EMPTY_RECORD                   42
