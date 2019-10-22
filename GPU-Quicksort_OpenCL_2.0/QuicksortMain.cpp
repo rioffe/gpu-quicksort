@@ -37,7 +37,6 @@ using namespace tbb;
 #endif
 // Types:
 typedef unsigned int uint;
-typedef	uint QuicksortFlag;
 
 #define READ_ALIGNMENT  4096 // Intel recommended alignment
 #define WRITE_ALIGNMENT 4096 // Intel recommended alignment
@@ -321,9 +320,7 @@ int main(int argc, char** argv)
 
 	double totalTime, quickSortTime, stdSortTime;
 
-	//LARGE_INTEGER beginClock, endClock, clockFreq;
 	double beginClock, endClock;
-	//QueryPerformanceFrequency (&clockFreq);
 
 	parseArgs (&myOCL, argc, argv, &NUM_ITERATIONS, pDeviceStr, pVendorStr, &widthReSz, &heightReSz, &bShowCL);
 
@@ -362,7 +359,7 @@ int main(int argc, char** argv)
 
   beginClock = seconds();
 	std::sort(pArrayCopy, pArrayCopy + arraySize);
-        endClock = seconds();
+  endClock = seconds();
 	totalTime = endClock - beginClock;
 	std::cout << "Time to sort: " << totalTime * 1000 << " ms" << std::endl;
 	stdSortTime = totalTime;
@@ -409,9 +406,9 @@ int main(int argc, char** argv)
 	InitializeOpenCL (pDeviceStr, pVendorStr, &myOCL.deviceID, &myOCL.contextHdl, &myOCL.cmdQHdl, bCPUDevice);
 	if (bShowCL)
 		QueryPrintOpenCLDeviceInfo (myOCL.deviceID, myOCL.contextHdl);	
-        beginClock = seconds();
+  beginClock = seconds();
 	CompileOpenCLProgram (bCPUDevice, myOCL.deviceID, myOCL.contextHdl, pSourceFileStr, &myOCL.programHdl);
-        endClock = seconds();
+  endClock = seconds();
 	totalTime = endClock - beginClock;
 	std::cout << "Time to build OpenCL Program: " << totalTime * 1000 << " ms" << std::endl;
 	InstantiateOpenCLKernels (&myOCL, arraySize, MAXSEQ, MAX_SIZE, pdone, pnews, pArray);
