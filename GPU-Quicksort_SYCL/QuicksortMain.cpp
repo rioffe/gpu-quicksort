@@ -42,9 +42,9 @@ using namespace cl::sycl;
  * to dictate the criteria for choosing a device from those that might be
  * present on a system. This example looks for a device with SPIR support
  * and prefers GPUs over CPUs. */
-class custom_selector : public device_selector {
+class intel_gpu_selector : public device_selector {
  public:
-  custom_selector() : device_selector() {}
+  intel_gpu_selector() : device_selector() {}
 
   /* The selection is performed via the () operator in the base
    * selector class.This method will be called once per device in each
@@ -119,46 +119,59 @@ void Cleanup(OCLResources* pOCL, int iExitCode, bool bExit, const char* optional
 
 void parseArgs(OCLResources* pOCL, int argc, char** argv, unsigned int* test_iterations, char* pDeviceStr, char* pVendorStr, unsigned int* widthReSz, unsigned int* heightReSz, bool* pbShowCL)
 {	
-	char*			pDeviceWStr = NULL;
-	char*			pVendorWStr = NULL;
-	const char sUsageString[512] = "Usage: Quicksort [num test iterations] [cpu|gpu] [intel|amd|nvidia] [SurfWidth(^2 only)] [SurfHeight(^2 only)] [show_CL | no_show_CL]";
-	
-	if (argc != 7)
-	{
-		Cleanup (pOCL, -1, true, sUsageString);
-	}
-	else
-	{
-		*test_iterations	= atoi (argv[1]);
-		pDeviceWStr			= argv[2];			// "cpu" or "gpu"	
-		pVendorWStr			= argv[3];			// "intel" or "amd" or "nvidia"
-		*widthReSz	= atoi (argv[4]);
-		*heightReSz	= atoi (argv[5]);
-		if (argv[6][0]=='s')
-			*pbShowCL = true;
-		else
-			*pbShowCL = false;
-	}
-	sprintf (pDeviceStr, "%s", pDeviceWStr);
-	sprintf (pVendorStr, "%s", pVendorWStr);
-    
-  custom_selector selector;
-  device d(selector);
-  if (d.is_host()) {
-    // This platform can't pass this test, it has no OpenCL devices
-    return;
+  std::string pDeviceWStr;
+  std::string pVendorWStr;
+  const char sUsageString[512] = "Usage: Quicksort [num test iterations] [cpu|gpu] [intel|amd|nvidia] [SurfWidth(^2 only)] [SurfHeight(^2 only)] [show_CL | no_show_CL]";
+  
+  if (argc != 7)
+  {
+  	Cleanup (pOCL, -1, true, sUsageString);
   }
+  else
+  {
+  	*test_iterations	= atoi (argv[1]);
+  	pDeviceWStr			= std::string(argv[2]);			// "cpu" or "gpu"	
+  	pVendorWStr			= std::string(argv[3]);			// "intel" or "amd" or "nvidia"
+  	*widthReSz	= atoi (argv[4]);
+  	*heightReSz	= atoi (argv[5]);
+  	if (argv[6][0]=='s')
+  		*pbShowCL = true;
+  	else
+  		*pbShowCL = false;
+  }
+  sprintf (pDeviceStr, "%s", pDeviceWStr.c_str());
+  sprintf (pVendorStr, "%s", pVendorWStr.c_str());
 
-  queue queue(selector, [](cl::sycl::exception_list l) {
-    for (auto ep : l) {
-      try {
-        std::rethrow_exception(ep);
-      } catch (cl::sycl::exception e) {
-        std::cout << e.what() << std::endl;
+  auto get_queue = [&pDeviceStr, &pVendorStr]() {  
+    device_selector* pds;
+    if (pVendorStr == std::string("intel")) {
+      if (pDeviceStr == std::string("gpu")) {
+          static intel_gpu_selector selector;
+		  pds = &selector;
+	  } else if (pDeviceStr == std::string("cpu")) {
+		  static cpu_selector selector;
+		  pds = &selector;
+	  }
+	} else {
+		static default_selector selector;
+		pds = &selector;
+	}
+
+    device d(*pds);
+
+    queue queue(*pds, [](cl::sycl::exception_list l) {
+      for (auto ep : l) {
+        try {
+          std::rethrow_exception(ep);
+        } catch (cl::sycl::exception e) {
+          std::cout << e.what() << std::endl;
+        }
       }
-    }
-  });
-
+    });
+    return queue;
+  };
+  
+  auto queue = get_queue();
   /* Retrieve the underlying cl_context of the context associated with the
    * queue. */
   pOCL->contextHdl = queue.get_context().get();
