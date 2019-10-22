@@ -94,6 +94,7 @@ typedef struct
 	cl_context			contextHdl;
 	cl_program			programHdl;
 	cl_command_queue	cmdQHdl;
+	cl::sycl::queue     queue;
 } OCLResources;
 
 // Globals:
@@ -172,6 +173,7 @@ void parseArgs(OCLResources* pOCL, int argc, char** argv, unsigned int* test_ite
   };
   
   auto queue = get_queue();
+  pOCL->queue = queue;
   /* Retrieve the underlying cl_context of the context associated with the
    * queue. */
   pOCL->contextHdl = queue.get_context().get();
@@ -249,11 +251,8 @@ void quicksort(T* data, int left, int right)
 }
 
 template <class T>
-void gqsort(OCLResources *pOCL, std::vector<block_record>& blocks, std::vector<parent_record>& parents, std::vector<work_record>& news, bool reset) {
+void gqsort(OCLResources *pOCL, cl_mem db, cl_mem dnb, std::vector<block_record>& blocks, std::vector<parent_record>& parents, std::vector<work_record>& news, bool reset) {
 	news.resize(blocks.size()*2);
-
-	size_t		dimNDR[2] = { 0, 0};
-	size_t		dimWG[2] = { 0, 0 };
 
 	// Create buffer objects for memory.
 	cl_mem blocksb = clCreateBuffer(pOCL->contextHdl, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, sizeof(block_record)*blocks.size(), &blocks[0], &ciErrNum);
@@ -263,14 +262,23 @@ void gqsort(OCLResources *pOCL, std::vector<block_record>& blocks, std::vector<p
 	cl_mem newsb = clCreateBuffer(pOCL->contextHdl, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, sizeof(work_record)*news.size(), &news[0], &ciErrNum);
 	CheckCLError (ciErrNum, "clCreateBuffer failed.", "clCreateBuffer.");
 	
+    kernel sycl_gqsort_kernel(gqsort_kernel, pOCL->queue.get_context());
 
-	ciErrNum |= clSetKernelArg(gqsort_kernel, 2, sizeof(cl_mem), (void*) &blocksb);
-	CheckCLError(ciErrNum, "clSetKernelArg failed.", "clSetKernelArg");
-	ciErrNum |= clSetKernelArg(gqsort_kernel, 3, sizeof(cl_mem), (void*) &parentsb);
-	CheckCLError(ciErrNum, "clSetKernelArg failed.", "clSetKernelArg");
-	ciErrNum |= clSetKernelArg(gqsort_kernel, 4, sizeof(cl_mem), (void*) &newsb);
-	CheckCLError(ciErrNum, "clSetKernelArg failed.", "clSetKernelArg");
+    pOCL->queue.submit([&](handler& cgh) {
+      /* Normally, SYCL sets kernel arguments for the user. However, when
+       * using the interoperability features, it is unable to do this and
+       * the user must set the arguments manually. */
+      cgh.set_arg(0, db);
+      cgh.set_arg(1, dnb);
+      cgh.set_arg(2, blocksb);
+      cgh.set_arg(3, parentsb);
+      cgh.set_arg(4, newsb);
 
+      cgh.parallel_for(nd_range<1>(range<1>(GQSORT_LOCAL_WORKGROUP_SIZE * (blocks.size())), 
+	                               range<1>(GQSORT_LOCAL_WORKGROUP_SIZE)), 
+	    sycl_gqsort_kernel);
+    });
+    pOCL->queue.wait_and_throw();
 	//std::cout << "blocks size is " << blocks.size() << std::endl;
 #ifdef GET_DETAILED_PERFORMANCE
 	static double absoluteTotal = 0.0;
@@ -285,11 +293,6 @@ void gqsort(OCLResources *pOCL, std::vector<block_record>& blocks, std::vector<p
   beginClock = seconds();
 #endif
 	// Lets do phase 1 pass
-	dimNDR[0] = GQSORT_LOCAL_WORKGROUP_SIZE * blocks.size();
-	dimWG[0] = GQSORT_LOCAL_WORKGROUP_SIZE;
-
-	ciErrNum = clEnqueueNDRangeKernel (pOCL->cmdQHdl, gqsort_kernel, 1, NULL, dimNDR, dimWG, 0, NULL, 0);
-	CheckCLError(ciErrNum, "clEnqueueNDRangeKernel failed.", "clEnqueueNDRangeKernel");
 	ciErrNum = clEnqueueReadBuffer(pOCL->cmdQHdl, newsb, CL_TRUE, 0, sizeof(work_record)*news.size(), &news[0], 0, NULL, NULL);
 	CheckCLError(ciErrNum, "clEnqueueReadBuffer failed.", "clEnqueueReadBuffer");
 
@@ -305,31 +308,30 @@ void gqsort(OCLResources *pOCL, std::vector<block_record>& blocks, std::vector<p
 }
 
 template <class T>
-void lqsort(OCLResources *pOCL, std::vector<work_record>& done, cl_mem tempb, T* d, size_t size) {
-	size_t		dimNDR[2] = { 0, 0};
-	size_t		dimWG[2] = { 0, 0 };
-
+void lqsort(OCLResources *pOCL, std::vector<work_record>& done, cl_mem tempb, cl_mem tempnb, T* d, size_t size) {
 	//std::cout << "done size is " << done.size() << std::endl; 
 	cl_mem doneb = clCreateBuffer(pOCL->contextHdl, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, sizeof(work_record)*done.size(), &done[0], &ciErrNum);
 	CheckCLError (ciErrNum, "clCreateBuffer failed.", "clCreateBuffer.");
 	
-	ciErrNum |= clSetKernelArg(lqsort_kernel, 2, sizeof(cl_mem), (void*) &doneb);
-	CheckCLError(ciErrNum, "clSetKernelArg failed.", "clSetKernelArg");
-
 #ifdef GET_DETAILED_PERFORMANCE
 	double beginClock, endClock;
   beginClock = seconds();
 #endif
-	// Lets do phase 2 pass
-	dimNDR[0] = LQSORT_LOCAL_WORKGROUP_SIZE * (done.size());
-	dimWG[0] = LQSORT_LOCAL_WORKGROUP_SIZE;
-	ciErrNum = clEnqueueNDRangeKernel (pOCL->cmdQHdl, lqsort_kernel, 1, NULL, dimNDR, dimWG, 0, NULL, 0);
-	CheckCLError(ciErrNum, "clEnqueueNDRangeKernel failed.", "clEnqueueNDRangeKernel");
+    kernel sycl_lqsort_kernel(lqsort_kernel, pOCL->queue.get_context());
 
-	T* foo = (T*)clEnqueueMapBuffer(pOCL->cmdQHdl, tempb, CL_TRUE, CL_MAP_READ, 0, sizeof(T)*size, 0, 0, 0, &ciErrNum); 
+    pOCL->queue.submit([&](handler& cgh) {
+      /* Normally, SYCL sets kernel arguments for the user. However, when
+       * using the interoperability features, it is unable to do this and
+       * the user must set the arguments manually. */
+      cgh.set_arg(0, tempb);
+      cgh.set_arg(1, tempnb);
+      cgh.set_arg(2, doneb);
 
-	ciErrNum = clEnqueueUnmapMemObject(pOCL->cmdQHdl, tempb, foo, 0, 0, 0);
-	CheckCLError(ciErrNum, "clEnqueueUnmapMemObject failed.", "clEnqueueUnmapMemObject");
+      cgh.parallel_for(nd_range<1>(range<1>(LQSORT_LOCAL_WORKGROUP_SIZE * (done.size())), 
+	                               range<1>(LQSORT_LOCAL_WORKGROUP_SIZE)), 
+	    sycl_lqsort_kernel);
+    });
+    pOCL->queue.wait_and_throw();
 
 #ifdef GET_DETAILED_PERFORMANCE
 	endClock = seconds();
@@ -350,16 +352,6 @@ void GPUQSort(OCLResources *pOCL, size_t size, T* d, T* dn)  {
 	CheckCLError (ciErrNum, "clCreateBuffer failed.", "clCreateBuffer.");
 	cl_mem dnb = clCreateBuffer(pOCL->contextHdl, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, ((sizeof(T)*size)/64 + 1)*64, dn, &ciErrNum);
 	CheckCLError (ciErrNum, "clCreateBuffer failed.", "clCreateBuffer.");
-
-	ciErrNum |= clSetKernelArg(gqsort_kernel, 0, sizeof(cl_mem), (void*) &db);
-	CheckCLError(ciErrNum, "clSetKernelArg failed.", "clSetKernelArg");
-	ciErrNum |= clSetKernelArg(gqsort_kernel,	1, sizeof(cl_mem), (void*) &dnb);
-	CheckCLError(ciErrNum, "clSetKernelArg failed.", "clSetKernelArg");
-
-	ciErrNum |= clSetKernelArg(lqsort_kernel, 0, sizeof(cl_mem), (void*) &db);
-	CheckCLError(ciErrNum, "clSetKernelArg failed.", "clSetKernelArg");
-	ciErrNum |= clSetKernelArg(lqsort_kernel,	1, sizeof(cl_mem), (void*) &dnb);
-	CheckCLError(ciErrNum, "clSetKernelArg failed.", "clSetKernelArg");
 
 	const size_t MAXSEQ = optp(size, 0.00009516, 203);
 	const size_t MAX_SIZE = 12*std::max(MAXSEQ, (size_t)QUICKSORT_BLOCK_SIZE);
@@ -402,7 +394,7 @@ void GPUQSort(OCLResources *pOCL, size_t size, T* d, T* dn)  {
 			blocks.push_back(br);
 		}
 
-		gqsort<T>(pOCL, blocks, parent_records, news, reset);
+		gqsort<T>(pOCL, db, dnb, blocks, parent_records, news, reset);
 		reset = false;
 		//std::cout << " blocks = " << blocks.size() << " parent records = " << parent_records.size() << " news = " << news.size() << std::endl;
 		work.clear();
@@ -425,7 +417,7 @@ void GPUQSort(OCLResources *pOCL, size_t size, T* d, T* dn)  {
 			done.push_back(*it);
 	}
 
-	lqsort<T>(pOCL, done, db, d, size);
+	lqsort<T>(pOCL, done, db, dnb, d, size);
 
 	// release buffers: we are done
 	clReleaseMemObject(db);
