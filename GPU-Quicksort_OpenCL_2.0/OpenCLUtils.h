@@ -346,10 +346,12 @@ void QueryPrintOpenCLDeviceInfo(cl_device_id deviceID, cl_context contextHdl)
 	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
 	printf ("CL_DEVICE_MAX_CLOCK_FREQUENCY		:%8d\n", uMaxDeviceFrequency);
 
+#ifdef _MSC_VER
 	cl_uint	uMaxImage2DWidth;
 	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_IMAGE2D_MAX_WIDTH, sizeof(cl_uint), &uMaxImage2DWidth, &uNumBytes);
 	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
 	printf ("CL_DEVICE_IMAGE2D_MAX_WIDTH		:%8d\n", uMaxImage2DWidth);
+#endif
 
 	cl_ulong	uLocalMemSize;
 	float		fLocalMemSize;

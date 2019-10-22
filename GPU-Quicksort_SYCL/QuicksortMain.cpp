@@ -8,6 +8,7 @@
 
 // QuicksortMain.cpp : Defines the entry point for the console application.
 //
+#include <CL/sycl.hpp>
 
 #include <stdio.h>
 #ifdef _MSC_VER
@@ -35,6 +36,34 @@
 #include "tbb/parallel_sort.h"
 using namespace tbb;
 #endif
+using namespace cl::sycl;
+
+/* Classes can inherit from the device_selector class to allow users
+ * to dictate the criteria for choosing a device from those that might be
+ * present on a system. This example looks for a device with SPIR support
+ * and prefers GPUs over CPUs. */
+class custom_selector : public device_selector {
+ public:
+  custom_selector() : device_selector() {}
+
+  /* The selection is performed via the () operator in the base
+   * selector class.This method will be called once per device in each
+   * platform. Note that all platforms are evaluated whenever there is
+   * a device selection. */
+  int operator()(const device& device) const override {
+    /* We only give a valid score to devices that support SPIR. */
+    //if (device.has_extension(cl::sycl::string_class("cl_khr_spir"))) {
+    if (device.get_info<info::device::name>().find("Intel") != std::string::npos) {
+      if (device.get_info<info::device::device_type>() ==
+          info::device_type::gpu) {
+        return 50;
+      }
+    }
+    /* Devices with a negative score will never be chosen. */
+    return -1;
+  }
+};
+
 // Types:
 typedef unsigned int uint;
 
@@ -68,7 +97,8 @@ typedef struct
 } OCLResources;
 
 // Globals:
-cl_int		ciErrNum;
+/* Create variable to store OpenCL errors. */
+::cl_int		ciErrNum = 0;
 
 static cl_kernel gqsort_kernel, lqsort_kernel;
 
@@ -111,6 +141,34 @@ void parseArgs(OCLResources* pOCL, int argc, char** argv, unsigned int* test_ite
 	}
 	sprintf (pDeviceStr, "%s", pDeviceWStr);
 	sprintf (pVendorStr, "%s", pVendorWStr);
+    
+  custom_selector selector;
+  device d(selector);
+  if (d.is_host()) {
+    // This platform can't pass this test, it has no OpenCL devices
+    return;
+  }
+
+  queue queue(selector, [](cl::sycl::exception_list l) {
+    for (auto ep : l) {
+      try {
+        std::rethrow_exception(ep);
+      } catch (cl::sycl::exception e) {
+        std::cout << e.what() << std::endl;
+      }
+    }
+  });
+
+  /* Retrieve the underlying cl_context of the context associated with the
+   * queue. */
+  pOCL->contextHdl = queue.get_context().get();
+
+  /* Retrieve the underlying cl_device_id of the device asscociated with the
+   * queue. */
+  pOCL->deviceID = queue.get_device().get();
+
+  /* Retrieve the underlying cl_command_queue of the queue. */
+  pOCL->cmdQHdl = queue.get();
 }
 
 void InstantiateOpenCLKernels(OCLResources *pOCL)
@@ -441,8 +499,8 @@ int main(int argc, char** argv)
 #endif // RUN_CPU_SORTS
 
 	// Initialize OpenCL:
-	bool bCPUDevice;
-	InitializeOpenCL (pDeviceStr, pVendorStr, &myOCL.deviceID, &myOCL.contextHdl, &myOCL.cmdQHdl, bCPUDevice);
+	bool bCPUDevice = false;
+	//InitializeOpenCL (pDeviceStr, pVendorStr, &myOCL.deviceID, &myOCL.contextHdl, &myOCL.cmdQHdl, bCPUDevice);
 	if (bShowCL)
 		QueryPrintOpenCLDeviceInfo (myOCL.deviceID, myOCL.contextHdl);	
   beginClock = seconds();
