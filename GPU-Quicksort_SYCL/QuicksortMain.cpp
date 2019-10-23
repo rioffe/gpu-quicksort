@@ -277,9 +277,9 @@ void gqsort(OCLResources *pOCL, buffer<T, 1>& d_buffer, buffer<T, 1>& dn_buffer,
     pOCL->queue.submit([&](handler& cgh) {
 	  auto db = d_buffer.template get_access<access::mode::discard_read_write>(cgh);
 	  auto dnb = dn_buffer.template get_access<access::mode::discard_read_write>(cgh);
-	  auto blocksb = blocks_buffer.template get_access<access::mode::discard_read_write>(cgh);
-	  auto parentsb = parents_buffer.template get_access<access::mode::discard_read_write>(cgh);
-	  auto newsb = news_buffer.template get_access<access::mode::read_write>(cgh);
+	  auto blocksb = blocks_buffer.get_access<access::mode::read>(cgh);
+	  auto parentsb = parents_buffer.get_access<access::mode::read>(cgh);
+	  auto newsb = news_buffer.get_access<access::mode::write>(cgh);
       /* Normally, SYCL sets kernel arguments for the user. However, when
        * using the interoperability features, it is unable to do this and
        * the user must set the arguments manually. */
@@ -314,9 +314,9 @@ void lqsort(OCLResources *pOCL, std::vector<work_record>& done, buffer<T, 1>& d_
     kernel sycl_lqsort_kernel(lqsort_kernel, pOCL->queue.get_context());
 
     pOCL->queue.submit([&](handler& cgh) {
-      auto db = d_buffer.template get_access<access::mode::read_write>(cgh);
+      auto db = d_buffer.template get_access<access::mode::discard_read_write>(cgh);
 	  auto dnb = dn_buffer.template get_access<access::mode::discard_read_write>(cgh);
-      auto doneb = done_buffer.get_access<access::mode::discard_read_write>(cgh);
+      auto doneb = done_buffer.get_access<access::mode::read>(cgh);
       /* Normally, SYCL sets kernel arguments for the user. However, when
        * using the interoperability features, it is unable to do this and
        * the user must set the arguments manually. */
