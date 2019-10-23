@@ -414,6 +414,55 @@ void GPUQSort(OCLResources *pOCL, size_t size, T* d, T* dn)  {
 	lqsort<T>(pOCL, done, d_buffer, dn_buffer, d, size);
 }
 
+void QueryPrintDeviceInfo(queue& q) {
+	auto vendor = q.get_device().get_info<info::device::vendor>();
+    auto name = q.get_device().get_info<info::device::name>();
+    printf("\nUsing platform: %s and device: %s.\n", vendor.c_str(), name.c_str());
+	printf ("OpenCL Device info:\n");
+    std::cout << "CL_DEVICE_VENDOR           : " << vendor << std::endl;
+	std::cout << "CL_DEVICE_NAME             : " << name << std::endl;
+	auto driver_version = q.get_device().get_info<info::device::driver_version>();
+	std::cout << "CL_DRIVER_VERSION          : " << driver_version << std::endl;
+	auto profile = q.get_device().get_info<info::device::profile>();
+	std::cout << "CL_DEVICE_PROFILE          : " << profile << std::endl;
+	auto version = q.get_device().get_info<info::device::version>();
+	std::cout << "CL_DEVICE_VERSION          : " << version << std::endl;
+    auto opencl_c_version = q.get_device().get_info<info::device::opencl_c_version>();
+    std::cout << "CL_DEVICE_OPENCL_C_VERSION : " << opencl_c_version << std::endl;
+    auto max_compute_units = q.get_device().get_info<info::device::max_compute_units>(); 
+	std::cout << "CL_DEVICE_MAX_COMPUTE_UNITS: " << max_compute_units << std::endl;
+	auto max_work_item_dimensions = q.get_device().get_info<info::device::max_work_item_dimensions>();
+	std::cout << "CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS: " << max_work_item_dimensions << std::endl;
+    auto max_work_item_sizes = q.get_device().get_info<info::device::max_work_item_sizes>();
+	printf ("CL_DEVICE_MAX_WORK_ITEM_SIZES   :    (%5zu, %5zu, %5zu)\n", 
+					max_work_item_sizes[0],max_work_item_sizes[1], max_work_item_sizes[2]);
+    auto max_work_group_size = q.get_device().get_info<info::device::max_work_group_size>();
+	std::cout << "CL_DEVICE_MAX_WORK_GROUP_SIZE: " << max_work_group_size << std::endl;
+    auto mem_base_addr_align = q.get_device().get_info<info::device::mem_base_addr_align>();
+    std::cout << "CL_DEVICE_MEM_BASE_ADDR_ALIGN: " << mem_base_addr_align << std::endl;
+    
+	size_t uMinBaseAddrAlignSizeBytes, uNumBytes;
+    ciErrNum = clGetDeviceInfo(q.get_device().get(), CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE, sizeof(cl_uint), &uMinBaseAddrAlignSizeBytes, &uNumBytes);
+	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success")
+	printf ("CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE: %8zu\n", uMinBaseAddrAlignSizeBytes);
+
+	auto max_clock_frequency = q.get_device().get_info<info::device::max_clock_frequency>();
+	std::cout << "CL_DEVICE_MAX_CLOCK_FREQUENCY: " << max_clock_frequency << std::endl;
+    auto image2D_max_width = q.get_device().get_info<info::device::image2d_max_width>();
+	std::cout << "CL_DEVICE_IMAGE2D_MAX_WIDTH  : " << image2D_max_width << std::endl; 
+    auto local_mem_size = q.get_device().get_info<info::device::local_mem_size>();
+	std::cout << "CL_DEVICE_LOCAL_MEM_SIZE     : " << local_mem_size << std::endl;
+    auto max_mem_alloc_size = q.get_device().get_info<info::device::max_mem_alloc_size>();
+	std::cout << "CL_DEVICE_MAX_MEM_ALLOC_SIZE : " << max_mem_alloc_size << "\n" << std::endl;
+
+#define MAX_NUM_FORMATS 500
+	cl_uint numFormats;
+	cl_image_format myFormats[MAX_NUM_FORMATS];
+
+	ciErrNum = clGetSupportedImageFormats(q.get_context().get(), CL_MEM_READ_ONLY, CL_MEM_OBJECT_IMAGE2D, 255, myFormats, &numFormats);
+	CheckCLError (ciErrNum, "clGetSupportedImageFormats() query failed.", "clGetSupportedImageFormats() query success")
+}
+
 int main(int argc, char** argv)
 {
 	OCLResources	myOCL;
@@ -495,9 +544,9 @@ int main(int argc, char** argv)
 
 	// Initialize OpenCL:
 	bool bCPUDevice = false;
-	//InitializeOpenCL (pDeviceStr, pVendorStr, &myOCL.deviceID, &myOCL.contextHdl, &myOCL.cmdQHdl, bCPUDevice);
 	if (bShowCL)
-		QueryPrintOpenCLDeviceInfo (myOCL.deviceID, myOCL.contextHdl);	
+	    QueryPrintDeviceInfo(myOCL.queue);
+		
   beginClock = seconds();
 	CompileOpenCLProgram (bCPUDevice, myOCL.deviceID, myOCL.contextHdl, pSourceFileStr, &myOCL.programHdl);
   endClock = seconds();

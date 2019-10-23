@@ -11,8 +11,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
 #include <string>
-
+#include <CL/cl.h>
 
 // Util for error checking:
 //#undef __OCL_NO_ERROR_CHECKING
@@ -38,9 +39,8 @@ if (CL_SUCCESS != __errNum__)								\
 }				
 #endif
 
-
 // Util for OpenCL build log:
-void BuildFailLog( cl_program program,
+void BuildFailLog(cl_program program,
                   cl_device_id device_id )
 {
     size_t paramValueSizeRet = 0;
@@ -61,132 +61,6 @@ void BuildFailLog( cl_program program,
 }
 
 static bool isNvidiaGpu = false;
-
-void InitializeOpenCL(char* pDeviceStr, char* pVendorStr, cl_device_id* pDeviceID, cl_context* pContextHdl, cl_command_queue* pCmdQHdl, bool& bCPUDevice)
-{	
-	// OpenCL System Initialization
-
-	*pDeviceID		= NULL;
-	*pContextHdl	= NULL;
-
-	// First query for all of the available platforms 
-	// Choose the one that matches the command line request
-	cl_uint			numPlatforms= 0;
-	cl_int			ciErrNum	= clGetPlatformIDs(0, NULL, &numPlatforms);
-	CheckCLError (ciErrNum, "No platforms Found.", "OpenCL platforms found.");
-
-	char				pPlatformVendor[256];
-	char                pDevVersion[256];
-	char                pLangVersion[256];
-	cl_platform_id		platformID	= NULL;
-	
-	cl_device_id		deviceID;
-	cl_context			contextHdl;
-	cl_command_queue	cmdQueueHdl;
-
-	bCPUDevice = false;
-	if (0 < numPlatforms) 
-	{
-		cl_platform_id		*pPlatformIDs = (cl_platform_id*)malloc(sizeof(cl_platform_id)*numPlatforms);
-		if (pPlatformIDs == 0) 
-		{
-			printf("Error: could allocate space for platform IDs\n");
-			exit(-1);
-		}
- 		ciErrNum = clGetPlatformIDs(numPlatforms, pPlatformIDs, NULL);
-		CheckCLError (ciErrNum, "Could not get platform IDs.", "Got platform IDs.");
-		unsigned i;
-
-		for (i = 0; i < numPlatforms; ++i) 
-		{
-			ciErrNum = clGetPlatformInfo(pPlatformIDs[i],CL_PLATFORM_VENDOR,sizeof(pPlatformVendor),pPlatformVendor,NULL);
-			CheckCLError (ciErrNum, "Could not get platform info.", "Got platform info.");
-			
-			platformID = pPlatformIDs[i];
-
-			if ((!strcmp(pPlatformVendor, "Intel Corporation")|| !strcmp(pPlatformVendor, "Intel(R) Corporation")) && !strcmp(pVendorStr, "intel") && !strcmp(pDeviceStr, "gpu") )
-			{
-				if(CL_SUCCESS == clGetDeviceIDs(platformID, CL_DEVICE_TYPE_GPU, 1, &deviceID, NULL))
-					break;
-			}
-			if ((!strcmp(pPlatformVendor, "Intel Corporation")|| !strcmp(pPlatformVendor, "Intel(R) Corporation")) && !strcmp(pVendorStr, "intel") && !strcmp(pDeviceStr, "cpu"))
-			{
-				if(CL_SUCCESS == clGetDeviceIDs(platformID, CL_DEVICE_TYPE_CPU, 1, &deviceID, NULL)) {
-					bCPUDevice = true;
-					break;
-				}
-			}
-			if (!strcmp(pPlatformVendor, "Advanced Micro Devices, Inc.") && !strcmp(pVendorStr, "amd") && !strcmp(pDeviceStr, "gpu") )
-			{
-				if(CL_SUCCESS == clGetDeviceIDs(platformID, CL_DEVICE_TYPE_GPU, 1, &deviceID, NULL))
-					break;
-			}
-			if (!strcmp(pPlatformVendor, "NVIDIA Corporation") && !strcmp(pVendorStr, "nvidia") && !strcmp(pDeviceStr, "gpu") )
-			{
-				if(CL_SUCCESS == clGetDeviceIDs(platformID, CL_DEVICE_TYPE_GPU, 1, &deviceID, NULL)) {
-          isNvidiaGpu = true;
-					break;
-        }
-			}
-		}
-
-		if(i == numPlatforms) 
-		{
-			printf("Error didn't find platform that matches requested platform: %s\n", pVendorStr);
-			free(pPlatformIDs);
-			exit(-1);
-		}
-		free(pPlatformIDs);
-
-		ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_VERSION, sizeof(pDevVersion), pDevVersion, NULL);
-		if (CL_SUCCESS != ciErrNum) {
-			printf("Error: couldn't get CL_DEVICE_VERSION!\n");
-			exit(-1);
-		}
-		ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_OPENCL_C_VERSION, sizeof(pLangVersion), pLangVersion, NULL);
-		if (CL_SUCCESS != ciErrNum) {
-			printf("Error: couldn't get CL_DEVICE_OPENCL_C_VERSION!\n");
-			exit(-1);
-		}
-
-		// Courtesy Aaron Kunze
-		// The format of the version string is defined in the spec as 
-		// "OpenCL <major>.<minor> <vendor-specific>" 
-		std::string dev_version(pDevVersion);
-		std::string lang_version(pLangVersion);
-		dev_version = dev_version.substr(std::string("OpenCL ").length()); 
-		dev_version = dev_version.substr(0, dev_version.find('.')); 
-
-		// The format of the version string is defined in the spec as 
-		// "OpenCL C <major>.<minor> <vendor-specific>" 
-		lang_version = lang_version.substr(std::string("OpenCL C ").length()); 
-		lang_version = lang_version.substr(0, lang_version.find('.')); 
-
-		if (!(atoi(dev_version.c_str()) >= 1 && atoi(lang_version.c_str()) >= 1)) {
-			printf("Device does not support OpenCL 1.2 needed for this sample! CL_DEVICE_VERSION: %s, CL_DEVICE_OPENCL_C_VERSION, %s\n", pDevVersion, pLangVersion);
-			exit(-1);
-		}
-	}
-	else 
-	{
-		printf("numPlatforms is %d\n", numPlatforms);
-		exit(-1);
-	}
-	
-    // Create the OpenCL context
-    contextHdl = clCreateContext(0, 1, &deviceID, NULL, NULL, &ciErrNum);
-	CheckCLError (ciErrNum, "Could not create CL context.", "Created CL context.");
-
-    // Create a command-queue
-    cmdQueueHdl = clCreateCommandQueueWithProperties(contextHdl, deviceID, 0, &ciErrNum);
-	CheckCLError (ciErrNum, "Could not create CL command queue.", "Created CL command queue.");
-
-	// Output parameters:
-	*pDeviceID		= deviceID;
-	*pContextHdl	= contextHdl;
-	*pCmdQHdl		= cmdQueueHdl;
-
-}
 
 void CreateOCLProgramFromSourceFile(char const *pSrcFilePath, cl_context hClContext, cl_program *pCLProgram )
 {
@@ -263,112 +137,6 @@ void CompileOpenCLProgram(bool bCPUDevice, cl_device_id oclDeviceID, cl_context 
 
 	// Output parameters:
 	*pOclProgramHdl = oclProgramHdl;
-}
-
-// Util for OpenCL info queries:
-void QueryPrintOpenCLDeviceInfo(cl_device_id deviceID, cl_context contextHdl)
-{
-	cl_uint		uMaxComputeUnits			= 0;
-	cl_uint		uMaxWorkItemDim				= 0;
-	size_t		uMaxWorkItemSizes[3];
-	cl_uint		uMaxNumSamplers				= 0;
-	cl_uint		uMinBaseAddrAlignSizeBits	= 0;		// CL_DEVICE_MEM_BASE_ADDR_ALIGN
-	cl_uint		uMinBaseAddrAlignSizeBytes	= 0;		// CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE
-	size_t		uNumBytes					= 0;
-	char		pDeviceVendorString[512];		// CL_DEVICE_VENDOR
-	char		pDeviceNameString[512];			// CL_DEVICE_NAME
-	char		pDriverVersionString[512];		// CL_DRIVER_VERSION
-	char		pDeviceProfileString[512];		// CL_DEVICE_PROFILE
-	char		pDeviceVersionString[512];		// CL_DEVICE_VERSION
-	char		pOpenCLCVersionString[512];		// CL_DEVICE_OPENCL_C_VERSION
-	cl_int		ciErrNum;
-
-	// Device Property Queries:
-	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_VENDOR, sizeof(pDeviceVendorString), &pDeviceVendorString, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_NAME, sizeof(pDeviceNameString), &pDeviceNameString, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-
-	printf("Using platform: %s and device: %s.\n", pDeviceVendorString, pDeviceNameString);
-	printf ("OpenCL Device info:\n");
-	printf ("CL_DEVICE_VENDOR			:%s\n", pDeviceVendorString);
-	printf ("CL_DEVICE_NAME				:%s\n", pDeviceNameString);
-
-	ciErrNum = clGetDeviceInfo(deviceID, CL_DRIVER_VERSION, sizeof(pDriverVersionString), &pDriverVersionString, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	printf ("CL_DRIVER_VERSION			:%s\n", pDriverVersionString);
-
-	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_PROFILE, sizeof(pDeviceProfileString), &pDeviceProfileString, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	printf ("CL_DEVICE_PROFILE			:%s\n", pDeviceProfileString);
-
-	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_VERSION, sizeof(pDeviceVersionString), &pDeviceVersionString, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	printf ("CL_DEVICE_VERSION			:%s\n", pDeviceVersionString);
-	
-	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_OPENCL_C_VERSION, sizeof(pOpenCLCVersionString), &pOpenCLCVersionString, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	printf ("CL_DEVICE_OPENCL_C_VERSION		:%s\n", pOpenCLCVersionString);
-
-
-	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(cl_uint), &uMaxComputeUnits, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	printf ("CL_DEVICE_MAX_COMPUTE_UNITS		:%8d\n", uMaxComputeUnits);
-
-	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS, sizeof(cl_uint), &uMaxWorkItemDim, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	printf ("CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS	:%8d\n", uMaxWorkItemDim);
-
-	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_MAX_WORK_ITEM_SIZES, sizeof(uMaxWorkItemSizes), &uMaxWorkItemSizes, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	printf ("CL_DEVICE_MAX_WORK_ITEM_SIZES		:    (%5zu, %5zu, %5zu)\n", 
-					uMaxWorkItemSizes[0],uMaxWorkItemSizes[1], uMaxWorkItemSizes[2]);
-	
-	size_t	uMaxWorkGroupSize;
-	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size_t), &uMaxWorkGroupSize, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	printf ("CL_DEVICE_MAX_WORK_GROUP_SIZE		:%8zu\n", uMaxWorkGroupSize);
-
-	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_MEM_BASE_ADDR_ALIGN, sizeof(cl_uint), &uMinBaseAddrAlignSizeBits, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	printf ("CL_DEVICE_MEM_BASE_ADDR_ALIGN		:%8d\n", uMinBaseAddrAlignSizeBits);
-
-	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE, sizeof(cl_uint), &uMinBaseAddrAlignSizeBytes, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	printf ("CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE	:%8d\n", uMinBaseAddrAlignSizeBytes);
-
-	cl_uint	uMaxDeviceFrequency;
-	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_MAX_CLOCK_FREQUENCY, sizeof(cl_uint), &uMaxDeviceFrequency, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	printf ("CL_DEVICE_MAX_CLOCK_FREQUENCY		:%8d\n", uMaxDeviceFrequency);
-
-#ifdef _MSC_VER
-	cl_uint	uMaxImage2DWidth;
-	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_IMAGE2D_MAX_WIDTH, sizeof(cl_uint), &uMaxImage2DWidth, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	printf ("CL_DEVICE_IMAGE2D_MAX_WIDTH		:%8d\n", uMaxImage2DWidth);
-#endif
-
-	cl_ulong	uLocalMemSize;
-	float		fLocalMemSize;
-	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_LOCAL_MEM_SIZE, sizeof(cl_ulong), &uLocalMemSize, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	fLocalMemSize = (float) uLocalMemSize;
-	printf ("CL_DEVICE_LOCAL_MEM_SIZE		:%12.1f\n", fLocalMemSize);
-
-	cl_long	uMaxMemAllocSize;
-	float fMaxMemAllocSize;  
-	ciErrNum = clGetDeviceInfo(deviceID, CL_DEVICE_MAX_MEM_ALLOC_SIZE, sizeof(cl_long), &uMaxMemAllocSize, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success");
-	fMaxMemAllocSize = (float) uMaxMemAllocSize;
-	printf ("CL_DEVICE_MAX_MEM_ALLOC_SIZE		:%12.1f\n", fMaxMemAllocSize);
-	
-#define MAX_NUM_FORMATS 500
-	cl_uint numFormats;
-	cl_image_format myFormats[MAX_NUM_FORMATS];
-
-	ciErrNum = clGetSupportedImageFormats(contextHdl, CL_MEM_READ_ONLY, CL_MEM_OBJECT_IMAGE2D, 255, myFormats, &numFormats);
-	CheckCLError (ciErrNum, "clGetSupportedImageFormats() query failed.", "clGetSupportedImageFormats() query success");
 }
 
 #endif
