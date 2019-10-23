@@ -234,7 +234,7 @@ void gqsort(OCLResources *pOCL, std::vector<block_record>& blocks, std::vector<p
 }
 
 template <class T>
-void lqsort(OCLResources *pOCL, std::vector<work_record>& done, cl_mem tempb, T* d, size_t size) {
+void lqsort(OCLResources *pOCL, std::vector<work_record>& done, cl_mem tempb) {
 	size_t		dimNDR[2] = { 0, 0};
 	size_t		dimWG[2] = { 0, 0 };
 
@@ -245,7 +245,7 @@ void lqsort(OCLResources *pOCL, std::vector<work_record>& done, cl_mem tempb, T*
 	ciErrNum |= clSetKernelArg(lqsort_kernel, 2, sizeof(cl_mem), (void*) &doneb);
 	CheckCLError(ciErrNum, "clSetKernelArg failed.", "clSetKernelArg");
 
-#ifdef GET_DETAILED_PERFORMANCE
+#ifdef GET_DETAILED_PERFORMend
 	double beginClock, endClock;
   beginClock = seconds();
 #endif
@@ -255,10 +255,10 @@ void lqsort(OCLResources *pOCL, std::vector<work_record>& done, cl_mem tempb, T*
 	ciErrNum = clEnqueueNDRangeKernel (pOCL->cmdQHdl, lqsort_kernel, 1, NULL, dimNDR, dimWG, 0, NULL, 0);
 	CheckCLError(ciErrNum, "clEnqueueNDRangeKernel failed.", "clEnqueueNDRangeKernel");
 
-	T* foo = (T*)clEnqueueMapBuffer(pOCL->cmdQHdl, tempb, CL_TRUE, CL_MAP_READ, 0, sizeof(T)*size, 0, 0, 0, &ciErrNum); 
-
-	ciErrNum = clEnqueueUnmapMemObject(pOCL->cmdQHdl, tempb, foo, 0, 0, 0);
-	CheckCLError(ciErrNum, "clEnqueueUnmapMemObject failed.", "clEnqueueUnmapMemObject");
+    ciErrNum = clFlush(pOCL->cmdQHdl);
+	CheckCLError(ciErrNum, "clFlush failed.", "clFlush");
+	ciErrNum = clFinish(pOCL->cmdQHdl);
+    CheckCLError(ciErrNum, "clFinish failed.", "clFinish");
 
 #ifdef GET_DETAILED_PERFORMANCE
 	endClock = seconds();
@@ -354,7 +354,7 @@ void GPUQSort(OCLResources *pOCL, size_t size, T* d, T* dn)  {
 			done.push_back(*it);
 	}
 
-	lqsort<T>(pOCL, done, db, d, size);
+	lqsort<T>(pOCL, done, db);
 
 	// release buffers: we are done
 	clReleaseMemObject(db);
