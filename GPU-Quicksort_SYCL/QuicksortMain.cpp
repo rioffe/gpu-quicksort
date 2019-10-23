@@ -251,16 +251,7 @@ void quicksort(T* data, int left, int right)
 }
 
 template <class T>
-void gqsort(OCLResources *pOCL, buffer<T, 1>& d_buffer, buffer<T, 1>& dn_buffer, std::vector<block_record>& blocks, std::vector<parent_record>& parents, std::vector<work_record>& news, bool reset) {
-	news.resize(blocks.size()*2);
-
-	// Create buffer objects for memory.
-	buffer<block_record, 1>  blocks_buffer(blocks.data(), range<1>(blocks.size()));
-	buffer<parent_record, 1>  parents_buffer(parents.data(), range<1>(parents.size()));
-	buffer<work_record, 1>  news_buffer(news.data(), range<1>(news.size()));
-
-    kernel sycl_gqsort_kernel(gqsort_kernel, pOCL->queue.get_context());
-
+void gqsort(OCLResources *pOCL, buffer<T>& d_buffer, buffer<T>& dn_buffer, std::vector<block_record>& blocks, std::vector<parent_record>& parents, std::vector<work_record>& news, bool reset) {
 #ifdef GET_DETAILED_PERFORMANCE
 	static double absoluteTotal = 0.0;
 	static uint count = 0;
@@ -274,6 +265,13 @@ void gqsort(OCLResources *pOCL, buffer<T, 1>& d_buffer, buffer<T, 1>& dn_buffer,
   beginClock = seconds();
 #endif
 
+	news.resize(blocks.size()*2);
+	// Create buffer objects for memory.
+	buffer<block_record>  blocks_buffer(blocks.begin(), blocks.end());
+	buffer<parent_record>  parents_buffer(parents.begin(), parents.end());
+	buffer<work_record>  news_buffer(news.begin(), news.end());
+    kernel sycl_gqsort_kernel(gqsort_kernel, pOCL->contextHdl);
+
     pOCL->queue.submit([&](handler& cgh) {
 	  auto db = d_buffer.template get_access<access::mode::discard_read_write>(cgh);
 	  auto dnb = dn_buffer.template get_access<access::mode::discard_read_write>(cgh);
@@ -283,20 +281,16 @@ void gqsort(OCLResources *pOCL, buffer<T, 1>& d_buffer, buffer<T, 1>& dn_buffer,
       /* Normally, SYCL sets kernel arguments for the user. However, when
        * using the interoperability features, it is unable to do this and
        * the user must set the arguments manually. */
-      cgh.set_arg(0, db);
-      cgh.set_arg(1, dnb);
-      cgh.set_arg(2, blocksb);
-      cgh.set_arg(3, parentsb);
-      cgh.set_arg(4, newsb);
+      cgh.set_args(db, dnb, blocksb, parentsb, newsb);
 
-      cgh.parallel_for(nd_range<1>(range<1>(GQSORT_LOCAL_WORKGROUP_SIZE * (blocks.size())), 
-	                               range<1>(GQSORT_LOCAL_WORKGROUP_SIZE)), 
+      cgh.parallel_for(nd_range<>(GQSORT_LOCAL_WORKGROUP_SIZE * blocks.size(), 
+	                              GQSORT_LOCAL_WORKGROUP_SIZE), 
 	    sycl_gqsort_kernel);
     });
     pOCL->queue.wait_and_throw();
 
 #ifdef GET_DETAILED_PERFORMANCE
-  endClock = seconds();
+    endClock = seconds();
 	double totalTime = endClock - beginClock;
 	absoluteTotal += totalTime;
 	std::cout << ++count << ": gqsort time " << absoluteTotal * 1000 << " ms" << std::endl;
@@ -304,14 +298,14 @@ void gqsort(OCLResources *pOCL, buffer<T, 1>& d_buffer, buffer<T, 1>& dn_buffer,
 }
 
 template <class T>
-void lqsort(OCLResources *pOCL, std::vector<work_record>& done, buffer<T, 1>& d_buffer, buffer<T, 1>& dn_buffer, T* d, size_t size) {
-	buffer<work_record, 1>  done_buffer(done.data(), range<1>(done.size()));
-	
+void lqsort(OCLResources *pOCL, std::vector<work_record>& done, buffer<T>& d_buffer, buffer<T>& dn_buffer) {
 #ifdef GET_DETAILED_PERFORMANCE
     double beginClock, endClock;
     beginClock = seconds();
 #endif
-    kernel sycl_lqsort_kernel(lqsort_kernel, pOCL->queue.get_context());
+
+	buffer<work_record>  done_buffer(done.begin(), done.end());
+    kernel sycl_lqsort_kernel(lqsort_kernel, pOCL->contextHdl);
 
     pOCL->queue.submit([&](handler& cgh) {
       auto db = d_buffer.template get_access<access::mode::discard_read_write>(cgh);
@@ -320,12 +314,9 @@ void lqsort(OCLResources *pOCL, std::vector<work_record>& done, buffer<T, 1>& d_
       /* Normally, SYCL sets kernel arguments for the user. However, when
        * using the interoperability features, it is unable to do this and
        * the user must set the arguments manually. */
-      cgh.set_arg(0, db);
-      cgh.set_arg(1, dnb);
-      cgh.set_arg(2, doneb);
-
-      cgh.parallel_for(nd_range<1>(range<1>(LQSORT_LOCAL_WORKGROUP_SIZE * (done.size())), 
-	                               range<1>(LQSORT_LOCAL_WORKGROUP_SIZE)), 
+      cgh.set_args(db, dnb, doneb);
+      cgh.parallel_for(nd_range<>(LQSORT_LOCAL_WORKGROUP_SIZE * done.size(), 
+	                              LQSORT_LOCAL_WORKGROUP_SIZE), 
 	    sycl_lqsort_kernel);
     });
     pOCL->queue.wait_and_throw();
@@ -344,8 +335,8 @@ size_t optp(size_t s, double k, size_t m) {
 template <class T>
 void GPUQSort(OCLResources *pOCL, size_t size, T* d, T* dn)  {
 	// allocate buffers
-	buffer<T, 1>  d_buffer(d, range<1>(size));
-	buffer<T, 1>  dn_buffer(dn, range<1>(size));
+	buffer<T>  d_buffer(d, range<>(size));
+	buffer<T>  dn_buffer(dn, range<>(size));
 
 	const size_t MAXSEQ = optp(size, 0.00009516, 203);
 	const size_t MAX_SIZE = 12*std::max(MAXSEQ, (size_t)QUICKSORT_BLOCK_SIZE);
@@ -388,7 +379,7 @@ void GPUQSort(OCLResources *pOCL, size_t size, T* d, T* dn)  {
 			blocks.push_back(br);
 		}
 
-		gqsort<T>(pOCL, d_buffer, dn_buffer, blocks, parent_records, news, reset);
+		gqsort(pOCL, d_buffer, dn_buffer, blocks, parent_records, news, reset);
 		reset = false;
 		//std::cout << " blocks = " << blocks.size() << " parent records = " << parent_records.size() << " news = " << news.size() << std::endl;
 		work.clear();
@@ -411,7 +402,7 @@ void GPUQSort(OCLResources *pOCL, size_t size, T* d, T* dn)  {
 			done.push_back(*it);
 	}
 
-	lqsort<T>(pOCL, done, d_buffer, dn_buffer, d, size);
+	lqsort(pOCL, done, d_buffer, dn_buffer);
 }
 
 void QueryPrintDeviceInfo(queue& q) {

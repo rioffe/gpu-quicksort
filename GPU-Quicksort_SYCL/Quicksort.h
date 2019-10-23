@@ -103,6 +103,8 @@ typedef struct work_record {
 typedef struct parent_record {
 	uint sstart, send, oldstart, oldend, blockcount; 
 #ifdef HOST
+    parent_record() :
+	    sstart(0), send(0), oldstart(0), oldend(0), blockcount(0) {}
 	parent_record(uint ss, uint se, uint os, uint oe, uint bc) : 
 		sstart(ss), send(se), oldstart(os), oldend(oe), blockcount(bc) {}
 #endif // HOST
