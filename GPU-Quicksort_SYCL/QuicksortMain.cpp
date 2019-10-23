@@ -251,20 +251,35 @@ void quicksort(T* data, int left, int right)
 }
 
 template <class T>
-void gqsort(OCLResources *pOCL, cl_mem db, cl_mem dnb, std::vector<block_record>& blocks, std::vector<parent_record>& parents, std::vector<work_record>& news, bool reset) {
+void gqsort(OCLResources *pOCL, buffer<T, 1>& d_buffer, buffer<T, 1>& dn_buffer, std::vector<block_record>& blocks, std::vector<parent_record>& parents, std::vector<work_record>& news, bool reset) {
 	news.resize(blocks.size()*2);
 
 	// Create buffer objects for memory.
-	cl_mem blocksb = clCreateBuffer(pOCL->contextHdl, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, sizeof(block_record)*blocks.size(), &blocks[0], &ciErrNum);
-	CheckCLError (ciErrNum, "clCreateBuffer failed.", "clCreateBuffer.");
-	cl_mem parentsb = clCreateBuffer(pOCL->contextHdl, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, sizeof(parent_record)*parents.size(), &parents[0], &ciErrNum);
-	CheckCLError (ciErrNum, "clCreateBuffer failed.", "clCreateBuffer.");
-	cl_mem newsb = clCreateBuffer(pOCL->contextHdl, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, sizeof(work_record)*news.size(), &news[0], &ciErrNum);
-	CheckCLError (ciErrNum, "clCreateBuffer failed.", "clCreateBuffer.");
-	
+	buffer<block_record, 1>  blocks_buffer(blocks.data(), range<1>(blocks.size()));
+	buffer<parent_record, 1>  parents_buffer(parents.data(), range<1>(parents.size()));
+	buffer<work_record, 1>  news_buffer(news.data(), range<1>(news.size()));
+
     kernel sycl_gqsort_kernel(gqsort_kernel, pOCL->queue.get_context());
 
+#ifdef GET_DETAILED_PERFORMANCE
+	static double absoluteTotal = 0.0;
+	static uint count = 0;
+
+	if (reset) {
+		absoluteTotal = 0.0;
+		count = 0;
+	}
+
+	double beginClock, endClock;
+  beginClock = seconds();
+#endif
+
     pOCL->queue.submit([&](handler& cgh) {
+	  auto db = d_buffer.template get_access<access::mode::discard_read_write>(cgh);
+	  auto dnb = dn_buffer.template get_access<access::mode::discard_read_write>(cgh);
+	  auto blocksb = blocks_buffer.template get_access<access::mode::discard_read_write>(cgh);
+	  auto parentsb = parents_buffer.template get_access<access::mode::discard_read_write>(cgh);
+	  auto newsb = news_buffer.template get_access<access::mode::read_write>(cgh);
       /* Normally, SYCL sets kernel arguments for the user. However, when
        * using the interoperability features, it is unable to do this and
        * the user must set the arguments manually. */
@@ -279,22 +294,6 @@ void gqsort(OCLResources *pOCL, cl_mem db, cl_mem dnb, std::vector<block_record>
 	    sycl_gqsort_kernel);
     });
     pOCL->queue.wait_and_throw();
-	//std::cout << "blocks size is " << blocks.size() << std::endl;
-#ifdef GET_DETAILED_PERFORMANCE
-	static double absoluteTotal = 0.0;
-	static uint count = 0;
-
-	if (reset) {
-		absoluteTotal = 0.0;
-		count = 0;
-	}
-
-	double beginClock, endClock;
-  beginClock = seconds();
-#endif
-	// Lets do phase 1 pass
-	ciErrNum = clEnqueueReadBuffer(pOCL->cmdQHdl, newsb, CL_TRUE, 0, sizeof(work_record)*news.size(), &news[0], 0, NULL, NULL);
-	CheckCLError(ciErrNum, "clEnqueueReadBuffer failed.", "clEnqueueReadBuffer");
 
 #ifdef GET_DETAILED_PERFORMANCE
   endClock = seconds();
@@ -302,29 +301,27 @@ void gqsort(OCLResources *pOCL, cl_mem db, cl_mem dnb, std::vector<block_record>
 	absoluteTotal += totalTime;
 	std::cout << ++count << ": gqsort time " << absoluteTotal * 1000 << " ms" << std::endl;
 #endif
-	clReleaseMemObject(blocksb);
-	clReleaseMemObject(parentsb);
-	clReleaseMemObject(newsb);
 }
 
 template <class T>
-void lqsort(OCLResources *pOCL, std::vector<work_record>& done, cl_mem tempb, cl_mem tempnb, T* d, size_t size) {
-	//std::cout << "done size is " << done.size() << std::endl; 
-	cl_mem doneb = clCreateBuffer(pOCL->contextHdl, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, sizeof(work_record)*done.size(), &done[0], &ciErrNum);
-	CheckCLError (ciErrNum, "clCreateBuffer failed.", "clCreateBuffer.");
+void lqsort(OCLResources *pOCL, std::vector<work_record>& done, buffer<T, 1>& d_buffer, buffer<T, 1>& dn_buffer, T* d, size_t size) {
+	buffer<work_record, 1>  done_buffer(done.data(), range<1>(done.size()));
 	
 #ifdef GET_DETAILED_PERFORMANCE
-	double beginClock, endClock;
-  beginClock = seconds();
+    double beginClock, endClock;
+    beginClock = seconds();
 #endif
     kernel sycl_lqsort_kernel(lqsort_kernel, pOCL->queue.get_context());
 
     pOCL->queue.submit([&](handler& cgh) {
+      auto db = d_buffer.template get_access<access::mode::read_write>(cgh);
+	  auto dnb = dn_buffer.template get_access<access::mode::discard_read_write>(cgh);
+      auto doneb = done_buffer.get_access<access::mode::discard_read_write>(cgh);
       /* Normally, SYCL sets kernel arguments for the user. However, when
        * using the interoperability features, it is unable to do this and
        * the user must set the arguments manually. */
-      cgh.set_arg(0, tempb);
-      cgh.set_arg(1, tempnb);
+      cgh.set_arg(0, db);
+      cgh.set_arg(1, dnb);
       cgh.set_arg(2, doneb);
 
       cgh.parallel_for(nd_range<1>(range<1>(LQSORT_LOCAL_WORKGROUP_SIZE * (done.size())), 
@@ -338,7 +335,6 @@ void lqsort(OCLResources *pOCL, std::vector<work_record>& done, cl_mem tempb, cl
 	double totalTime = endClock - beginClock;
 	std::cout << "lqsort time " << totalTime * 1000 << " ms" << std::endl;
 #endif
-	clReleaseMemObject(doneb);
 }
 
 size_t optp(size_t s, double k, size_t m) {
@@ -348,10 +344,8 @@ size_t optp(size_t s, double k, size_t m) {
 template <class T>
 void GPUQSort(OCLResources *pOCL, size_t size, T* d, T* dn)  {
 	// allocate buffers
-	cl_mem db = clCreateBuffer(pOCL->contextHdl, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, ((sizeof(T)*size)/64 + 1)*64, d, &ciErrNum);
-	CheckCLError (ciErrNum, "clCreateBuffer failed.", "clCreateBuffer.");
-	cl_mem dnb = clCreateBuffer(pOCL->contextHdl, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, ((sizeof(T)*size)/64 + 1)*64, dn, &ciErrNum);
-	CheckCLError (ciErrNum, "clCreateBuffer failed.", "clCreateBuffer.");
+	buffer<T, 1>  d_buffer(d, range<1>(size));
+	buffer<T, 1>  dn_buffer(dn, range<1>(size));
 
 	const size_t MAXSEQ = optp(size, 0.00009516, 203);
 	const size_t MAX_SIZE = 12*std::max(MAXSEQ, (size_t)QUICKSORT_BLOCK_SIZE);
@@ -394,7 +388,7 @@ void GPUQSort(OCLResources *pOCL, size_t size, T* d, T* dn)  {
 			blocks.push_back(br);
 		}
 
-		gqsort<T>(pOCL, db, dnb, blocks, parent_records, news, reset);
+		gqsort<T>(pOCL, d_buffer, dn_buffer, blocks, parent_records, news, reset);
 		reset = false;
 		//std::cout << " blocks = " << blocks.size() << " parent records = " << parent_records.size() << " news = " << news.size() << std::endl;
 		work.clear();
@@ -417,11 +411,7 @@ void GPUQSort(OCLResources *pOCL, size_t size, T* d, T* dn)  {
 			done.push_back(*it);
 	}
 
-	lqsort<T>(pOCL, done, db, dnb, d, size);
-
-	// release buffers: we are done
-	clReleaseMemObject(db);
-	clReleaseMemObject(dnb);
+	lqsort<T>(pOCL, done, d_buffer, dn_buffer, d, size);
 }
 
 int main(int argc, char** argv)
