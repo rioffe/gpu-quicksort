@@ -267,9 +267,9 @@ void gqsort(OCLResources *pOCL, buffer<T>& d_buffer, buffer<T>& dn_buffer, std::
 
 	news.resize(blocks.size()*2);
 	// Create buffer objects for memory.
-	buffer<block_record>  blocks_buffer(blocks.begin(), blocks.end());
-	buffer<parent_record>  parents_buffer(parents.begin(), parents.end());
-	buffer<work_record>  news_buffer(news.begin(), news.end());
+	buffer<block_record>  blocks_buffer(blocks.data(), blocks.size(), {property::buffer::use_host_ptr()});
+	buffer<parent_record>  parents_buffer(parents.data(), parents.size(), {property::buffer::use_host_ptr()});
+	buffer<work_record>  news_buffer(news.data(), news.size(), {property::buffer::use_host_ptr()});
     kernel sycl_gqsort_kernel(gqsort_kernel, pOCL->contextHdl);
 
     pOCL->queue.submit([&](handler& cgh) {
@@ -304,7 +304,7 @@ void lqsort(OCLResources *pOCL, std::vector<work_record>& done, buffer<T>& d_buf
     beginClock = seconds();
 #endif
 
-	buffer<work_record>  done_buffer(done.begin(), done.end());
+	buffer<work_record>  done_buffer(done.data(), done.size(), {property::buffer::use_host_ptr()});
     kernel sycl_lqsort_kernel(lqsort_kernel, pOCL->contextHdl);
 
     pOCL->queue.submit([&](handler& cgh) {
@@ -335,8 +335,8 @@ size_t optp(size_t s, double k, size_t m) {
 template <class T>
 void GPUQSort(OCLResources *pOCL, size_t size, T* d, T* dn)  {
 	// allocate buffers
-	buffer<T>  d_buffer(d, range<>(size));
-	buffer<T>  dn_buffer(dn, range<>(size));
+	buffer<T>  d_buffer(d, size, {property::buffer::use_host_ptr()});
+	buffer<T>  dn_buffer(dn, size, {property::buffer::use_host_ptr()});
 
 	const size_t MAXSEQ = optp(size, 0.00009516, 203);
 	const size_t MAX_SIZE = 12*std::max(MAXSEQ, (size_t)QUICKSORT_BLOCK_SIZE);
