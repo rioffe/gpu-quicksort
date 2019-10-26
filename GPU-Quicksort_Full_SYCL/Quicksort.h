@@ -99,31 +99,19 @@ uint median(uint x1, uint x2, uint x3) {
 // work record contains info about the part of array that is still longer than QUICKSORT_BLOCK_SIZE and 
 // therefore cannot be processed by lqsort_kernel yet. It contins the start and the end indexes into 
 // an array to be sorted, associated pivot and direction of the sort. 
-#ifdef HOST
+
 template <class T>
-#else
-typedef 
-#endif
 struct work_record {
 	uint start;
 	uint end;
-#ifdef HOST
 	T    pivot;
-#else 
-    uint pivot;
-#endif
 	uint direction;
-#ifdef HOST
+
 	work_record() : 
 		start(0), end(0), pivot(T(0)), direction(EMPTY_RECORD) {}
 	work_record(uint s, uint e, T p, uint d) : 
 		start(s), end(e), pivot(p), direction(d) {}
-#endif // HOST
-} 
-#ifndef HOST
-work_record
-#endif
-;
+};
 
 
 // parent record contains everything kernels need to know about the parent of a set of blocks:
@@ -133,39 +121,23 @@ work_record
 // parent record fields are used to calculate new pivots and new work records.
 typedef struct parent_record {
 	uint sstart, send, oldstart, oldend, blockcount; 
-#ifdef HOST
     parent_record() :
 	    sstart(0), send(0), oldstart(0), oldend(0), blockcount(0) {}
 	parent_record(uint ss, uint se, uint os, uint oe, uint bc) : 
 		sstart(ss), send(se), oldstart(os), oldend(oe), blockcount(bc) {}
-#endif // HOST
 } parent_record;
 
 // block record contains everything kernels needs to know about the block:
 // start and end indexes into input array, pivot, direction of sorting and the parent record index
-#ifdef HOST
 template <class T>
-#else
-typedef
-#endif
 struct block_record {
 	uint start;
 	uint end;
-#ifdef HOST
 	T    pivot;
-#else 
-    uint pivot;
-#endif
 	uint direction;
 	uint parent;
-#ifdef HOST
 	block_record() : start(0), end(0), pivot(T(0)), direction(EMPTY_RECORD), parent(0) {}
 	block_record(uint s, uint e, T p, uint d, uint prnt) : 
 		start(s), end(e), pivot(p), direction(d), parent(prnt) {}
-#endif // HOST
-}
-#ifndef HOST
-block_record
-#endif
-;
+};
 #endif // QUICKSORT_H
