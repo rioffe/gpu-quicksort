@@ -1122,7 +1122,7 @@ report_total_time:
 #endif
 	}
 	std::cout << " Number of failures: " << num_failures << " out of " << NUM_ITERATIONS << std::endl;
-	AverageTime = AverageTime/(NUM_ITERATIONS-1); // Get rid of the first time which includes kernel compilation
+	AverageTime = AverageTime/NUM_ITERATIONS; 
 	std::cout << "Average Time: " << AverageTime * 1000 << " ms" << std::endl;
 	double stdDev = 0.0, minTime = 1000000.0, maxTime = 0.0;
 	for(uint k = 0; k < NUM_ITERATIONS; k++) 
