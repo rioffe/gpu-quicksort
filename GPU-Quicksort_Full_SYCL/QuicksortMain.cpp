@@ -273,6 +273,7 @@ class lqsort_kernel_class {
 	
     using local_uint_read_write_accessor = accessor<uint, 1, access::mode::read_write, access::target::local>;
     using local_int_read_write_accessor = accessor<int, 1, access::mode::read_write, access::target::local>;
+    using local_T_read_write_accessor = accessor<T, 1, access::mode::read_write, access::target::local>;
     using local_workstack_record_read_write_accessor = accessor<workstack_record, 1, access::mode::read_write, access::target::local>;
 
     lqsort_kernel_class(discard_read_write_accessor db,
@@ -280,9 +281,9 @@ class lqsort_kernel_class {
 						seqs_read_accessor seqsb,
 						local_workstack_record_read_write_accessor workstackb,
 						local_int_read_write_accessor workstack_pointerb,
-						local_uint_read_write_accessor mysb, 
-						local_uint_read_write_accessor mysnb, 
-						local_uint_read_write_accessor tempb,
+						local_T_read_write_accessor mysb, 
+						local_T_read_write_accessor mysnb, 
+						local_T_read_write_accessor tempb,
 						local_uint_read_write_accessor ltsumb,
 						local_uint_read_write_accessor gtsumb,
 						local_uint_read_write_accessor ltb,
@@ -292,11 +293,11 @@ class lqsort_kernel_class {
 						workstack_pointer(workstack_pointerb),
 						mys(mysb), mysn(mysnb), temp(tempb),
 						ltsum(ltsumb), gtsum(gtsumb),
-						lt(ltb), gt(gtb)
+						lt(ltb), gt(gtb) 
 						 {}
 
     /// bitonic_sort: sort 2*LOCAL_THREADCOUNT elements
-    void bitonic_sort(T* sh_data, const uint localid, nd_item<1> id)
+    void bitonic_sort(local_ptr<T> sh_data, const uint localid, nd_item<1> id)
     {
     	for (uint ulevel = 1; ulevel < LQSORT_LOCAL_WORKGROUP_SIZE; ulevel <<= 1) {
             for (uint j = ulevel; j > 0; j >>= 1) {
@@ -326,10 +327,10 @@ class lqsort_kernel_class {
         }
     }
 
-    void sort_threshold(T* data_in, 
-	                    T* data_out,
+    void sort_threshold(local_ptr<T> data_in, 
+	                    global_ptr<T> data_out,
     					uint start, 
-    					uint end, T* temp_, uint localid,
+    					uint end, local_ptr<T> temp_, uint localid,
 						nd_item<1> id) 
     {
     	uint tsum = end - start;
@@ -369,7 +370,7 @@ class lqsort_kernel_class {
 		const size_t blockid = id.get_group(0);
         const size_t localid = id.get_local_id(0);
 
-        T* s, *sn;
+        local_ptr<T> s, sn;
 	    uint i, ltp, gtp;
 		T tmp;
 	
@@ -410,11 +411,11 @@ class lqsort_kernel_class {
     			ltsum[0] = gtsum[0] = 0;	
     		}
     		if (direction == 1) {
-    			s = &mys[0];
-    			sn = &mysn[0];
+    			s = mys.get_pointer();
+    			sn = mysn.get_pointer();
     		} else {
-    			s = &mysn[0];
-    			sn = &mys[0];
+    			s = mysn.get_pointer();
+    			sn = mys.get_pointer();
     		}
     		// Set thread local counters to zero
     		lt[localid] = gt[localid] = 0;
@@ -493,13 +494,13 @@ class lqsort_kernel_class {
     		// if the sequence is shorter than SORT_THRESHOLD
     		// sort it using an alternative sort and place result in d
     		if (ltsum[0] <= SORT_THRESHOLD) {
-    			sort_threshold(sn, &d[d_offset], start, start + ltsum[0], &temp[0], localid, id);
+    			sort_threshold(sn, d.get_pointer() + d_offset, start, start + ltsum[0], temp.get_pointer(), localid, id);
     		} else {
     			PUSH(start, start + ltsum[0])
     		}
     		
     		if (gtsum[0] <= SORT_THRESHOLD) {
-    			sort_threshold(sn, &d[d_offset], end - gtsum[0], end, &temp[0], localid, id);
+    			sort_threshold(sn, d.get_pointer() + d_offset, end - gtsum[0], end, temp.get_pointer(), localid, id);
     		} else {
     			PUSH(end - gtsum[0], end)
     		}
@@ -513,7 +514,7 @@ class lqsort_kernel_class {
     local_workstack_record_read_write_accessor workstack;
 	local_int_read_write_accessor workstack_pointer;
 	
-	local_uint_read_write_accessor mys, mysn, temp;
+	local_T_read_write_accessor mys, mysn, temp;
 
 	local_uint_read_write_accessor ltsum, gtsum;
 	local_uint_read_write_accessor lt, gt;
@@ -763,6 +764,7 @@ void lqsort(OCLResources *pOCL,
 
     pOCL->queue.submit([&](handler& cgh) {
 		using local_workstack_record_read_write_accessor = accessor<workstack_record, 1, access::mode::read_write, access::target::local>;
+		using local_T_read_write_accessor = accessor<T, 1, access::mode::read_write, access::target::local>;
 		using local_uint_read_write_accessor = accessor<uint, 1, access::mode::read_write, access::target::local>;
 		using local_int_read_write_accessor = accessor<int, 1, access::mode::read_write, access::target::local>;
 
@@ -772,10 +774,12 @@ void lqsort(OCLResources *pOCL,
 
 	  local_workstack_record_read_write_accessor workstack(range<>(QUICKSORT_BLOCK_SIZE/SORT_THRESHOLD), cgh);
 	  local_int_read_write_accessor workstack_pointer(range<>(1), cgh);
-	  local_uint_read_write_accessor mys(range<>(QUICKSORT_BLOCK_SIZE), cgh), mysn(range<>(QUICKSORT_BLOCK_SIZE), cgh),
-	      temp(range<>(SORT_THRESHOLD), cgh), ltsum(range<>(1), cgh), gtsum(range<>(1), cgh),
+	  local_uint_read_write_accessor ltsum(range<>(1), cgh), gtsum(range<>(1), cgh),
 		  lt(range<>(LQSORT_LOCAL_WORKGROUP_SIZE+1), cgh), gt(range<>(LQSORT_LOCAL_WORKGROUP_SIZE+1), cgh);
-
+      local_T_read_write_accessor mys(range<>(QUICKSORT_BLOCK_SIZE), cgh), mysn(range<>(QUICKSORT_BLOCK_SIZE), cgh),
+          temp(range<>(SORT_THRESHOLD), cgh);
+ 
+ 
 	  auto lqsort = lqsort_kernel_class<T>(db, dnb, doneb,
 	      workstack, workstack_pointer, mys, mysn, temp, ltsum, gtsum, lt, gt);
 
