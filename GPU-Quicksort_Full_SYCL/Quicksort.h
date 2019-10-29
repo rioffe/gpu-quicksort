@@ -35,19 +35,36 @@ T median(T x1, T x2, T x3) {
 	}
 }
 
+template <class T> struct select_type_selector;
+
+template <> struct select_type_selector<uint>
+{
+  typedef uint data_t;
+};
+
+template <> struct select_type_selector<float>
+{
+  typedef uint data_t;
+};
+
+template <> struct select_type_selector<double>
+{
+  typedef ulong data_t;
+};
+
 template <class T>
 T median_select(T x1, T x2, T x3) {
 	if (x1 < x2) {
 		if (x2 < x3) {
 			return x2;
 		} else {
-      return cl::sycl::select(x1, x3, (uint)(x1 < x3));
+      return cl::sycl::select(x1, x3, typename select_type_selector<T>::data_t(x1 < x3));
 		}
 	} else { // x1 >= x2
 		if (x1 < x3) {
 			return x1;
 		} else { // x1 >= x3
-      return cl::sycl::select(x2, x3,(uint)(x2 < x3));
+      return cl::sycl::select(x2, x3, typename select_type_selector<T>::data_t(x2 < x3));
 		}
 	}
 }
