@@ -344,7 +344,7 @@ class lqsort_kernel_class {
     			if (i < tsum) {
     				temp_[i] = data_in[start + i];
     			} else {
-    				temp_[i] = UINT_MAX;
+    				temp_[i] = std::numeric_limits<T>::max();
     			}
     		}
 		    id.barrier(access::fence_space::local_space);
@@ -688,10 +688,19 @@ class gqsort_kernel_class {
 	  local_read_write_accessor lt, gt, ltsum, gtsum, lbeg, gbeg;
 };
 
+// Note that for every type that we intend to sort we need to allocate this
 template <>
 cl::sycl::kernel* gqsort_kernel_class<uint>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
 template <>
 cl::sycl::kernel* lqsort_kernel_class<uint>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
+template <>
+cl::sycl::kernel* gqsort_kernel_class<float>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
+template <>
+cl::sycl::kernel* lqsort_kernel_class<float>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
+template <>
+cl::sycl::kernel* gqsort_kernel_class<double>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
+template <>
+cl::sycl::kernel* lqsort_kernel_class<double>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
 
 template <class T>
 void gqsort(OCLResources *pOCL, 
@@ -924,35 +933,25 @@ void QueryPrintDeviceInfo(queue& q) {
 	CheckCLError (ciErrNum, "clGetSupportedImageFormats() query failed.", "clGetSupportedImageFormats() query success")
 }
 
-int main(int argc, char** argv)
+template <class T>
+int big_test(OCLResources& myOCL, uint arraySize, unsigned int	NUM_ITERATIONS, 
+             const char* pDeviceStr, const std::string& type_name) 
 {
-	OCLResources	myOCL;
-	unsigned int	NUM_ITERATIONS;
-	char			pDeviceStr[256];
-	char			pVendorStr[256];
-	bool			bShowCL = false;
-
-	uint			heightReSz, widthReSz;
-
 	double totalTime, quickSortTime, stdSortTime;
 
 	double beginClock, endClock;
-
-	parseArgs (&myOCL, argc, argv, &NUM_ITERATIONS, pDeviceStr, pVendorStr, &widthReSz, &heightReSz, &bShowCL);
-
+    
 	printf("\n\n\n--------------------------------------------------------------------\n");
-	
-	uint arraySize = widthReSz*heightReSz;
 	printf("Allocating array size of %d\n", arraySize);
 #ifdef _MSC_VER 
-	uint* pArray = (uint*)_aligned_malloc (((arraySize*sizeof(uint))/64 + 1)*64, 4096);
-	uint* pArrayCopy = (uint*)_aligned_malloc (((arraySize*sizeof(uint))/64 + 1)*64, 4096);
+	T* pArray = (T*)_aligned_malloc (((arraySize*sizeof(T))/64 + 1)*64, 4096);
+	T* pArrayCopy = (T*)_aligned_malloc (((arraySize*sizeof(T))/64 + 1)*64, 4096);
 #else // _MSC_VER
-  uint* pArray = (uint*)aligned_alloc (4096, ((arraySize*sizeof(uint))/64 + 1)*64);
-  uint* pArrayCopy = (uint*)aligned_alloc (4096, ((arraySize*sizeof(uint))/64 + 1)*64);
+  T* pArray = (T*)aligned_alloc (4096, ((arraySize*sizeof(T))/64 + 1)*64);
+  T* pArrayCopy = (T*)aligned_alloc (4096, ((arraySize*sizeof(T))/64 + 1)*64);
 #endif // _MSC_VER
 
-	std::generate(pArray, pArray + arraySize, [](){static uint i = 0; return ++i; });
+	std::generate(pArray, pArray + arraySize, [](){static T i = 0; return ++i; });
 	std::random_shuffle(pArray, pArray + arraySize);
 #ifdef RUN_CPU_SORTS
 	std::cout << "Sorting the regular way..." << std::endl;
@@ -977,7 +976,7 @@ int main(int argc, char** argv)
 	quickSortTime = totalTime;
 #ifdef TRUST_BUT_VERIFY
 	{
-		std::vector<uint> verify(arraySize);
+		std::vector<T> verify(arraySize);
 		std::copy(pArray, pArray + arraySize, verify.begin());
 
 		std::cout << "verifying: ";
@@ -1004,11 +1003,8 @@ int main(int argc, char** argv)
 
 	// Initialize OpenCL:
 	bool bCPUDevice = false;
-	if (bShowCL)
-	    QueryPrintDeviceInfo(myOCL.queue);
-		
-	std::cout << "Sorting with GPUQSort on the " << pDeviceStr << ": " << std::endl;
-	std::vector<uint> original(arraySize);
+	std::cout << "Sorting with GPUQSort on the " << pDeviceStr << "with type " << type_name << std::endl;
+	std::vector<T> original(arraySize);
 	std::copy(pArray, pArray + arraySize, original.begin());
 
     // Let's prebuild SYCL program
@@ -1022,24 +1018,24 @@ try_me_second:
 	try {
       bool has_it = false;
 	  try {
-	    has_it = program.has_kernel<lqsort_kernel_class<uint>>();
+	    has_it = program.has_kernel<lqsort_kernel_class<T>>();
 	  } catch (...) {}
 
 	  if (has_it)
 	    std::cout << "No need to build! We will just get it!" << std::endl;
       else { 
-	    std::cout << "before program.build_with_kernel_type<lqsort_kernel_class<uint>>();\n";
+	    std::cout << "before program.build_with_kernel_type<lqsort_kernel_class<T>>();\n";
 	    beginClock = seconds();
-        program.build_with_kernel_type<lqsort_kernel_class<uint>>();
+        program.build_with_kernel_type<lqsort_kernel_class<T>>();
         endClock = seconds();
 	    totalTime += endClock - beginClock;
 	    //cl_program p = program.get();
 	    //BuildFailLog(p, myOCL.deviceID);
-        std::cout << "after program.build_with_kernel_type<lqsort_kernel_class<uint>>();\n";
+        std::cout << "after program.build_with_kernel_type<lqsort_kernel_class<T>>();\n";
 	    std::cout << "Time to build SYCL Program: " << totalTime * 1000 << " ms" << std::endl;
 	  }
-      *lqsort_kernel_class<uint>::kernel = program.get_kernel<lqsort_kernel_class<uint>>();
-	  std::cout << "Successfully acquired lqsort_kernel_class<uint>!" << std::endl;
+      *lqsort_kernel_class<T>::kernel = program.get_kernel<lqsort_kernel_class<T>>();
+	  std::cout << "Successfully acquired lqsort_kernel_class<T>!" << std::endl;
 	} catch (const cl::sycl::exception& e) {
 	  std::cerr << "SYCL exception caught: " << e.what() << "\n";
 	  return 1;
@@ -1054,24 +1050,24 @@ try_me_first:
 	try {
 	  bool has_it = false;
 	  try { 
-		has_it = program.has_kernel<gqsort_kernel_class<uint>>();
+		has_it = program.has_kernel<gqsort_kernel_class<T>>();
 	  } catch (...) {}
 
 	  if (has_it)
 	    std::cout << "No need to build! We will just get it!" << std::endl;
       else {
-	    std::cout << "before program.build_with_kernel_type<gqsort_kernel_class<uint>>();\n";
+	    std::cout << "before program.build_with_kernel_type<gqsort_kernel_class<T>>();\n";
 	    beginClock = seconds();
-        program.build_with_kernel_type<gqsort_kernel_class<uint>>();
+        program.build_with_kernel_type<gqsort_kernel_class<T>>();
         endClock = seconds();
 	    totalTime += endClock - beginClock;
 	    //cl_program p = program.get();
 	    //BuildFailLog(p, myOCL.deviceID);
-        std::cout << "after program.build_with_kernel_type<gqsort_kernel_class<uint>>();\n";
+        std::cout << "after program.build_with_kernel_type<gqsort_kernel_class<T>>();\n";
 	    std::cout << "Time to build SYCL Program: " << totalTime * 1000 << " ms" << std::endl;
 	  }
-      *gqsort_kernel_class<uint>::kernel = program.get_kernel<gqsort_kernel_class<uint>>();
-	  std::cout << "Successfully acquired gqsort_kernel_class<uint>!" << std::endl;
+      *gqsort_kernel_class<T>::kernel = program.get_kernel<gqsort_kernel_class<T>>();
+	  std::cout << "Successfully acquired gqsort_kernel_class<T>!" << std::endl;
 	} catch (const cl::sycl::exception& e) {
 	  std::cerr << "SYCL exception caught: " << e.what() << "\n";
 	  return 1;
@@ -1090,8 +1086,7 @@ report_total_time:
 	uint num_failures = 0;
 	for(uint k = 0; k < NUM_ITERATIONS; k++) {
 		std::copy(original.begin(), original.end(), pArray);
-		std::vector<uint> seqs;
-		std::vector<uint> verify(arraySize);
+		std::vector<T> verify(arraySize);
 		std::copy(pArray, pArray + arraySize, verify.begin());
 
 		beginClock = seconds();
@@ -1153,6 +1148,29 @@ report_total_time:
   free(pArray);
   free(pArrayCopy);
 #endif // _MSC_VER
+  return 0;
+}
+
+int main(int argc, char** argv)
+{
+	OCLResources	myOCL;
+	unsigned int	NUM_ITERATIONS;
+	char			pDeviceStr[256];
+	char			pVendorStr[256];
+	bool			bShowCL = false;
+
+	uint			heightReSz, widthReSz;
+
+
+	parseArgs (&myOCL, argc, argv, &NUM_ITERATIONS, pDeviceStr, pVendorStr, &widthReSz, &heightReSz, &bShowCL);
+	
+	if (bShowCL)
+	    QueryPrintDeviceInfo(myOCL.queue);
+		
+	uint arraySize = widthReSz*heightReSz;
+    big_test<uint>(myOCL,arraySize, NUM_ITERATIONS, pDeviceStr, "uint");
+    big_test<float>(myOCL,arraySize, NUM_ITERATIONS, pDeviceStr, "float");
+    big_test<double>(myOCL,arraySize, NUM_ITERATIONS, pDeviceStr, "double");
 
 	return 0;
 }
