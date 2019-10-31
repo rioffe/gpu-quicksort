@@ -31,11 +31,8 @@
 #include <vector>
 #include <map>
 
-#ifndef _MSC_VER
-// Linux
 #include "tbb/parallel_sort.h"
 using namespace tbb;
-#endif
 using namespace cl::sycl;
 
 /* Classes can inherit from the device_selector class to allow users
@@ -66,7 +63,12 @@ class intel_gpu_selector : public device_selector {
 
 // Types:
 typedef unsigned int uint;
-
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
 #define READ_ALIGNMENT  4096 // Intel recommended alignment
 #define WRITE_ALIGNMENT 4096 // Intel recommended alignment
 

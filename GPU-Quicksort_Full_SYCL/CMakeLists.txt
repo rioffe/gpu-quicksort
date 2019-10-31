@@ -15,7 +15,7 @@ enable_testing()
 option(NVIDIA_GPU "Compile for NVidia hardware: slightly different global/local WG sizes" OFF)
 
 if(WIN32)
-  add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+  add_definitions(-D_CRT_SECURE_NO_WARNINGS -D_MT=1)
 else(WIN32)
 endif(WIN32)
 if(NVIDIA_GPU)

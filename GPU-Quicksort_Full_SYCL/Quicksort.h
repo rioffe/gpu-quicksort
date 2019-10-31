@@ -49,7 +49,11 @@ template <> struct select_type_selector<float>
 
 template <> struct select_type_selector<double>
 {
+#ifdef _MSC_VER
+  typedef ulonglong data_t;
+#else
   typedef ulong data_t;
+#endif
 };
 
 template <class T>

@@ -31,11 +31,8 @@
 #include <vector>
 #include <map>
 
-#ifndef _MSC_VER
-// Linux
 #include "tbb/parallel_sort.h"
 using namespace tbb;
-#endif
 using namespace cl::sycl;
 
 /* Classes can inherit from the device_selector class to allow users
@@ -65,8 +62,12 @@ class intel_gpu_selector : public device_selector {
 };
 
 // Types:
-typedef unsigned int uint;
-
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
 #define READ_ALIGNMENT  4096 // Intel recommended alignment
 #define WRITE_ALIGNMENT 4096 // Intel recommended alignment
 
@@ -1034,7 +1035,7 @@ try_me_second:
         std::cout << "after program.build_with_kernel_type<lqsort_kernel_class<T>>();\n";
 	    std::cout << "Time to build SYCL Program: " << totalTime * 1000 << " ms" << std::endl;
 	  }
-      *lqsort_kernel_class<T>::kernel = program.get_kernel<lqsort_kernel_class<T>>();
+       new (lqsort_kernel_class<T>::kernel) cl::sycl::kernel(program.get_kernel<lqsort_kernel_class<T>>());
 	  std::cout << "Successfully acquired lqsort_kernel_class<T>!" << std::endl;
 	} catch (const cl::sycl::exception& e) {
 	  std::cerr << "SYCL exception caught: " << e.what() << "\n";
@@ -1051,7 +1052,7 @@ try_me_first:
 	  bool has_it = false;
 	  try { 
 		has_it = program.has_kernel<gqsort_kernel_class<T>>();
-	  } catch (...) {}
+	  } catch (...) { std::cout << "Caught something!" << std::endl; }
 
 	  if (has_it)
 	    std::cout << "No need to build! We will just get it!" << std::endl;
@@ -1066,7 +1067,7 @@ try_me_first:
         std::cout << "after program.build_with_kernel_type<gqsort_kernel_class<T>>();\n";
 	    std::cout << "Time to build SYCL Program: " << totalTime * 1000 << " ms" << std::endl;
 	  }
-      *gqsort_kernel_class<T>::kernel = program.get_kernel<gqsort_kernel_class<T>>();
+      new (gqsort_kernel_class<T>::kernel) cl::sycl::kernel(program.get_kernel<gqsort_kernel_class<T>>());
 	  std::cout << "Successfully acquired gqsort_kernel_class<T>!" << std::endl;
 	} catch (const cl::sycl::exception& e) {
 	  std::cerr << "SYCL exception caught: " << e.what() << "\n";
