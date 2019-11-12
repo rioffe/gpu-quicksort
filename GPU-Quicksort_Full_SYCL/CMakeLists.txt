@@ -17,6 +17,7 @@ option(NVIDIA_GPU "Compile for NVidia hardware: slightly different global/local 
 if(WIN32)
   add_definitions(-D_CRT_SECURE_NO_WARNINGS -D_MT=1)
 else(WIN32)
+  add_definitions(-stdlib=libc++)
 endif(WIN32)
 if(NVIDIA_GPU)
   add_definitions(-DNVIDIA_GPU=1)
