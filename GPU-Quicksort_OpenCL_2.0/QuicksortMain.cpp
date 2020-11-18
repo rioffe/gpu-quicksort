@@ -52,7 +52,6 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <map>
 
 #include "tbb/parallel_sort.h"
-using namespace tbb;
 // Types:
 typedef unsigned int uint;
 #ifdef min
@@ -392,7 +391,7 @@ int main(int argc, char** argv)
 
   beginClock = seconds();
 	//quicksort(pArrayCopy, 0, arraySize-1);
-  parallel_sort(pArrayCopy, pArrayCopy + arraySize);
+  tbb::parallel_sort(pArrayCopy, pArrayCopy + arraySize);
   endClock = seconds();
 	totalTime = endClock - beginClock;
 	std::cout << "Time to sort: " << totalTime * 1000 << " ms" << std::endl;
