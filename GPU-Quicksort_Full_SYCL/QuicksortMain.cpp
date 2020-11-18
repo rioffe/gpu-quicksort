@@ -53,7 +53,6 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <map>
 
 #include "tbb/parallel_sort.h"
-using namespace tbb;
 using namespace cl::sycl;
 
 /* Classes can inherit from the device_selector class to allow users
@@ -991,7 +990,7 @@ int big_test(OCLResources& myOCL, uint arraySize, unsigned int	NUM_ITERATIONS,
 
   beginClock = seconds();
 	//quicksort(pArrayCopy, 0, arraySize-1);
-  parallel_sort(pArrayCopy, pArrayCopy + arraySize);
+  tbb::parallel_sort(pArrayCopy, pArrayCopy + arraySize);
   endClock = seconds();
 	totalTime = endClock - beginClock;
 	std::cout << "Time to sort: " << totalTime * 1000 << " ms" << std::endl;
