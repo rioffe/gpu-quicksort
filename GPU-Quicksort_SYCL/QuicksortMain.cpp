@@ -47,6 +47,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "OpenCLUtils.h"
 #include <math.h>
 #include <iostream>
+#include <random>
 #include <algorithm>
 #include <iterator>
 #include <vector>
@@ -453,7 +454,7 @@ void QueryPrintDeviceInfo(queue& q) {
 	std::cout << "CL_DEVICE_MAX_WORK_GROUP_SIZE: " << max_work_group_size << std::endl;
     auto mem_base_addr_align = q.get_device().get_info<info::device::mem_base_addr_align>();
     std::cout << "CL_DEVICE_MEM_BASE_ADDR_ALIGN: " << mem_base_addr_align << std::endl;
-    
+
 	size_t uMinBaseAddrAlignSizeBytes, uNumBytes;
     ciErrNum = clGetDeviceInfo(q.get_device().get(), CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE, sizeof(cl_uint), &uMinBaseAddrAlignSizeBytes, &uNumBytes);
 	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success")
@@ -506,7 +507,9 @@ int main(int argc, char** argv)
 #endif // _MSC_VER
 
 	std::generate(pArray, pArray + arraySize, [](){static uint i = 0; return ++i; });
-	std::random_shuffle(pArray, pArray + arraySize);
+  std::random_device rd;
+  std::mt19937 g(rd());
+	std::shuffle(pArray, pArray + arraySize, g);
 #ifdef RUN_CPU_SORTS
 	std::cout << "Sorting the regular way..." << std::endl;
 	std::copy(pArray, pArray + arraySize, pArrayCopy);

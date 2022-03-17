@@ -47,6 +47,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "OpenCLUtils.h"
 #include <math.h>
 #include <iostream>
+#include <random>
 #include <algorithm>
 #include <iterator>
 #include <vector>
@@ -112,7 +113,7 @@ typedef struct
 {	
 	// CL platform handles:
 	cl_device_id		deviceID;
-	cl_context			contextHdl;
+	cl::sycl::context			contextHdl;
 	cl_program			programHdl;
 	cl_command_queue	cmdQHdl;
 	cl::sycl::queue     queue;
@@ -131,7 +132,7 @@ void Cleanup(OCLResources* pOCL, int iExitCode, bool bExit, const char* optional
 
 	if (pOCL->programHdl)		{ clReleaseProgram(pOCL->programHdl);		pOCL->programHdl=NULL;	}
 	if (pOCL->cmdQHdl)			{ clReleaseCommandQueue(pOCL->cmdQHdl);		pOCL->cmdQHdl=NULL;		}
-	if (pOCL->contextHdl)		{ clReleaseContext(pOCL->contextHdl);		pOCL->contextHdl= NULL;	}
+	//if (pOCL->contextHdl)		{ clReleaseContext(pOCL->contextHdl);		pOCL->contextHdl= NULL;	}
 
 	if (bExit)
 		exit (iExitCode);
@@ -195,7 +196,7 @@ void parseArgs(OCLResources* pOCL, int argc, char** argv, unsigned int* test_ite
   pOCL->queue = queue;
   /* Retrieve the underlying cl_context of the context associated with the
    * queue. */
-  pOCL->contextHdl = queue.get_context().get();
+  pOCL->contextHdl = queue.get_context();
 
   /* Retrieve the underlying cl_device_id of the device asscociated with the
    * queue. */
@@ -972,8 +973,10 @@ int big_test(OCLResources& myOCL, uint arraySize, unsigned int	NUM_ITERATIONS,
   T* pArrayCopy = (T*)aligned_alloc (4096, ((arraySize*sizeof(T))/64 + 1)*64);
 #endif // _MSC_VER
 
-	std::generate(pArray, pArray + arraySize, [](){static T i = 0; return ++i; });
-	std::random_shuffle(pArray, pArray + arraySize);
+	std::generate(pArray, pArray + arraySize, [](){static uint i = 0; return ++i; });
+  std::random_device rd;
+  std::mt19937 g(rd());
+	std::shuffle(pArray, pArray + arraySize, g);
 #ifdef RUN_CPU_SORTS
 	std::cout << "Sorting the regular way..." << std::endl;
 	std::copy(pArray, pArray + arraySize, pArrayCopy);
@@ -1028,8 +1031,9 @@ int big_test(OCLResources& myOCL, uint arraySize, unsigned int	NUM_ITERATIONS,
 	std::vector<T> original(arraySize);
 	std::copy(pArray, pArray + arraySize, original.begin());
 
-    // Let's prebuild SYCL program
-	cl::sycl::program program(myOCL.contextHdl);
+  // Let's prebuild SYCL program
+  auto program = cl::sycl::get_kernel_bundle<cl::sycl::bundle_state::executable>(myOCL.contextHdl);  
+	//cl::sycl::program program(myOCL.contextHdl);
     totalTime = 0;
 //#define SWAP_ORDER 1
 #ifdef SWAP_ORDER

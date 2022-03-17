@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2014-2019, Intel Corporation
+Copyright (c) 2014-2022, Intel Corporation
 Redistribution and use in source and binary forms, with or without 
 modification, are permitted provided that the following conditions 
 are met:
@@ -37,8 +37,8 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <CL/cl.h>
 
 // Util for error checking:
-//#undef __OCL_NO_ERROR_CHECKING
-#define __OCL_NO_ERROR_CHECKING
+#undef __OCL_NO_ERROR_CHECKING
+//#define __OCL_NO_ERROR_CHECKING
 
 #ifdef __OCL_NO_ERROR_CHECKING
 #define CheckCLError(__errNum__, __failMsg__, __passMsg__)	\

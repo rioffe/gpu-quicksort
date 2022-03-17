@@ -46,6 +46,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "OpenCLUtils.h"
 #include <math.h>
 #include <iostream>
+#include <random>
 #include <algorithm>
 #include <iterator>
 #include <vector>
@@ -374,7 +375,9 @@ int main(int argc, char** argv)
 #endif // _MSC_VER
 
 	std::generate(pArray, pArray + arraySize, [](){static uint i = 0; return ++i; });
-	std::random_shuffle(pArray, pArray + arraySize);
+  std::random_device rd;
+  std::mt19937 g(rd());
+	std::shuffle(pArray, pArray + arraySize, g);
 #ifdef RUN_CPU_SORTS
 	std::cout << "Sorting the regular way..." << std::endl;
 	std::copy(pArray, pArray + arraySize, pArrayCopy);
