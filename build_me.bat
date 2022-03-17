@@ -4,7 +4,7 @@ for %%a in (GPU-Quicksort_OpenCL_1.2 GPU-Quicksort_OpenCL_2.0 GPU-Quicksort_SYCL
   echo --------------- Algorithm %%a ----------------
   cd %%a
   echo ... Building ...
-  dpcpp-cl /MD /GX /D_CRT_SECURE_NO_WARNINGS -o Quicksort.exe QuicksortMain.cpp OpenCL.lib
+  dpcpp-cl /MD /GX /D_CRT_SECURE_NO_WARNINGS /D__SYCL_INTERNAL_API -o Quicksort.exe QuicksortMain.cpp OpenCL.lib
   echo ... Done ...
   set "nmbr=0"
   for %%c in (256 512 1024 2048 4096 8192 16384) do call :run_loops %%c
