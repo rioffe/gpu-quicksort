@@ -71,7 +71,8 @@ class intel_gpu_selector : public device_selector {
   int operator()(const device& device) const override {
     /* We only give a valid score to devices that support SPIR. */
     //if (device.has_extension(cl::sycl::string_class("cl_khr_spir"))) {
-    if (device.get_info<info::device::name>().find("Intel") != std::string::npos) {
+    if (device.get_info<info::device::name>().find("Intel") != std::string::npos &&
+        device.get_info<info::device::opencl_c_version>().find("OpenCL") != std::string::npos) {
       if (device.get_info<info::device::device_type>() ==
           info::device_type::gpu) {
         return 50;

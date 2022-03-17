@@ -37,8 +37,8 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <CL/cl.h>
 
 // Util for error checking:
-#undef __OCL_NO_ERROR_CHECKING
-//#define __OCL_NO_ERROR_CHECKING
+// #undef __OCL_NO_ERROR_CHECKING
+#define __OCL_NO_ERROR_CHECKING
 
 #ifdef __OCL_NO_ERROR_CHECKING
 #define CheckCLError(__errNum__, __failMsg__, __passMsg__)	\
@@ -48,8 +48,8 @@ POSSIBILITY OF SUCH DAMAGE.
 if (CL_SUCCESS != __errNum__)								\
 {															\
 		char __msgBuf__[256];								\
-		sprintf (__msgBuf__, "CL Error num %d: %s at line %d, file %s in function %s().\n", __errNum__, __failMsg__, __LINE__, __FILE__, __FUNCTION__);	\
-		printf (__msgBuf__);								\
+		snprintf (__msgBuf__, 256, "CL Error num %d: %s at line %d, file %s in function %s().\n", __errNum__, __failMsg__, __LINE__, __FILE__, __FUNCTION__);	\
+		std::cout << __msgBuf__;								\
 		getchar();											\
 		printf("Failed on OpenCLError\n");					\
 		assert (CL_SUCCESS != __errNum__);					\
