@@ -15,7 +15,7 @@ enable_testing()
 option(NVIDIA_GPU "Compile for NVidia hardware: slightly different global/local WG sizes" OFF)
 
 if(WIN32)
-  add_definitions(-D_CRT_SECURE_NO_WARNINGS -D__SYCL_INTERNAL_API)
+  add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 else(WIN32)
   if ("${os_version_suffix}" STREQUAL ".el7")
     add_definitions(-stdlib=libc++)

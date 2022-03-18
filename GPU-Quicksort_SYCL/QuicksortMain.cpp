@@ -30,6 +30,8 @@ POSSIBILITY OF SUCH DAMAGE.
 // QuicksortMain.cpp : Defines the entry point for the console application.
 //
 #include <CL/sycl.hpp>
+#include <CL/sycl/backend.hpp>
+#include <CL/sycl/backend/opencl.hpp>
 
 #include <stdio.h>
 #ifdef _MSC_VER
@@ -200,14 +202,14 @@ void parseArgs(OCLResources* pOCL, int argc, char** argv, unsigned int* test_ite
   pOCL->queue = queue;
   /* Retrieve the underlying cl_context of the context associated with the
    * queue. */
-  pOCL->contextHdl = queue.get_context().get();
+  pOCL->contextHdl = get_native<backend::opencl>(queue.get_context());
 
   /* Retrieve the underlying cl_device_id of the device asscociated with the
    * queue. */
-  pOCL->deviceID = queue.get_device().get();
+  pOCL->deviceID = get_native<backend::opencl>(queue.get_device());
 
   /* Retrieve the underlying cl_command_queue of the queue. */
-  pOCL->cmdQHdl = queue.get();
+  pOCL->cmdQHdl = get_native<backend::opencl>(queue);
 }
 
 void InstantiateOpenCLKernels(OCLResources *pOCL)
@@ -294,7 +296,7 @@ void gqsort(OCLResources *pOCL, buffer<T>& d_buffer, buffer<T>& dn_buffer, std::
 	buffer<block_record>  blocks_buffer(blocks.data(), blocks.size(), {property::buffer::use_host_ptr()});
 	buffer<parent_record>  parents_buffer(parents.data(), parents.size(), {property::buffer::use_host_ptr()});
 	buffer<work_record>  news_buffer(news.data(), news.size(), {property::buffer::use_host_ptr()});
-    kernel sycl_gqsort_kernel(gqsort_kernel, pOCL->contextHdl);
+    kernel sycl_gqsort_kernel = make_kernel<backend::opencl>(gqsort_kernel, pOCL->queue.get_context());
 
     pOCL->queue.submit([&](handler& cgh) {
 	  auto db = d_buffer.template get_access<access::mode::discard_read_write>(cgh);
@@ -329,7 +331,7 @@ void lqsort(OCLResources *pOCL, std::vector<work_record>& done, buffer<T>& d_buf
 #endif
 
 	buffer<work_record>  done_buffer(done.data(), done.size(), {property::buffer::use_host_ptr()});
-    kernel sycl_lqsort_kernel(lqsort_kernel, pOCL->contextHdl);
+    kernel sycl_lqsort_kernel = make_kernel<backend::opencl>(lqsort_kernel, pOCL->queue.get_context());
 
     pOCL->queue.submit([&](handler& cgh) {
       auto db = d_buffer.template get_access<access::mode::discard_read_write>(cgh);
@@ -457,7 +459,7 @@ void QueryPrintDeviceInfo(queue& q) {
     std::cout << "CL_DEVICE_MEM_BASE_ADDR_ALIGN: " << mem_base_addr_align << std::endl;
 
 	size_t uMinBaseAddrAlignSizeBytes, uNumBytes;
-    ciErrNum = clGetDeviceInfo(q.get_device().get(), CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE, sizeof(cl_uint), &uMinBaseAddrAlignSizeBytes, &uNumBytes);
+    ciErrNum = clGetDeviceInfo(get_native<backend::opencl>(q.get_device()), CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE, sizeof(cl_uint), &uMinBaseAddrAlignSizeBytes, &uNumBytes);
 	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success")
 	printf ("CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE: %8zu\n", uMinBaseAddrAlignSizeBytes);
 
@@ -474,7 +476,7 @@ void QueryPrintDeviceInfo(queue& q) {
 	cl_uint numFormats;
 	cl_image_format myFormats[MAX_NUM_FORMATS];
 
-	ciErrNum = clGetSupportedImageFormats(q.get_context().get(), CL_MEM_READ_ONLY, CL_MEM_OBJECT_IMAGE2D, 255, myFormats, &numFormats);
+	ciErrNum = clGetSupportedImageFormats(get_native<backend::opencl>(q.get_context()), CL_MEM_READ_ONLY, CL_MEM_OBJECT_IMAGE2D, 255, myFormats, &numFormats);
 	CheckCLError (ciErrNum, "clGetSupportedImageFormats() query failed.", "clGetSupportedImageFormats() query success")
 }
 
