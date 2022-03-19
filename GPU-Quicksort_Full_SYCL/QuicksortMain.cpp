@@ -114,10 +114,10 @@ double seconds() {
 typedef struct
 {	
 	// CL platform handles:
-	cl_device_id		deviceID;
+	//cl_device_id		deviceID;
 	cl::sycl::context			contextHdl;
-	cl_program			programHdl;
-	cl_command_queue	cmdQHdl;
+	//cl_program			programHdl;
+	//cl_command_queue	cmdQHdl;
 	cl::sycl::queue     queue;
 } OCLResources;
 
@@ -132,8 +132,8 @@ void Cleanup(OCLResources* pOCL, int iExitCode, bool bExit, const char* optional
 
 	memset(pOCL, 0, sizeof (OCLResources));
 
-	if (pOCL->programHdl)		{ clReleaseProgram(pOCL->programHdl);		pOCL->programHdl=NULL;	}
-	if (pOCL->cmdQHdl)			{ clReleaseCommandQueue(pOCL->cmdQHdl);		pOCL->cmdQHdl=NULL;		}
+	//if (pOCL->programHdl)		{ clReleaseProgram(pOCL->programHdl);		pOCL->programHdl=NULL;	}
+	//if (pOCL->cmdQHdl)			{ clReleaseCommandQueue(pOCL->cmdQHdl);		pOCL->cmdQHdl=NULL;		}
 	//if (pOCL->contextHdl)		{ clReleaseContext(pOCL->contextHdl);		pOCL->contextHdl= NULL;	}
 
 	if (bExit)
@@ -202,10 +202,10 @@ void parseArgs(OCLResources* pOCL, int argc, char** argv, unsigned int* test_ite
 
   /* Retrieve the underlying cl_device_id of the device asscociated with the
    * queue. */
-  pOCL->deviceID = get_native<backend::opencl>(queue.get_device());
+  //pOCL->deviceID = get_native<backend::opencl>(queue.get_device());
 
   /* Retrieve the underlying cl_command_queue of the queue. */
-  pOCL->cmdQHdl = get_native<backend::opencl>(queue);
+  //pOCL->cmdQHdl = get_native<backend::opencl>(queue);
 }
 
 //#define GET_DETAILED_PERFORMANCE 1
@@ -937,9 +937,9 @@ void QueryPrintDeviceInfo(queue& q) {
     std::cout << "CL_DEVICE_MEM_BASE_ADDR_ALIGN: " << mem_base_addr_align << std::endl;
     
 	size_t uMinBaseAddrAlignSizeBytes, uNumBytes;
-    ciErrNum = clGetDeviceInfo(get_native<backend::opencl>(q.get_device()), CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE, sizeof(cl_uint), &uMinBaseAddrAlignSizeBytes, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success")
-	printf ("CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE: %8zu\n", uMinBaseAddrAlignSizeBytes);
+    //ciErrNum = clGetDeviceInfo(get_native<backend::opencl>(q.get_device()), CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE, sizeof(cl_uint), &uMinBaseAddrAlignSizeBytes, &uNumBytes);
+//	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success")
+//	printf ("CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE: %8zu\n", uMinBaseAddrAlignSizeBytes);
 
 	auto max_clock_frequency = q.get_device().get_info<info::device::max_clock_frequency>();
 	std::cout << "CL_DEVICE_MAX_CLOCK_FREQUENCY: " << max_clock_frequency << std::endl;
@@ -950,12 +950,12 @@ void QueryPrintDeviceInfo(queue& q) {
     auto max_mem_alloc_size = q.get_device().get_info<info::device::max_mem_alloc_size>();
 	std::cout << "CL_DEVICE_MAX_MEM_ALLOC_SIZE : " << max_mem_alloc_size << "\n" << std::endl;
 
-    const uint MAX_NUM_FORMATS = 500;
-	cl_uint numFormats;
-	cl_image_format myFormats[MAX_NUM_FORMATS];
-
-	ciErrNum = clGetSupportedImageFormats(get_native<backend::opencl>(q.get_context()), CL_MEM_READ_ONLY, CL_MEM_OBJECT_IMAGE2D, 255, myFormats, &numFormats);
-	CheckCLError (ciErrNum, "clGetSupportedImageFormats() query failed.", "clGetSupportedImageFormats() query success")
+ //   const uint MAX_NUM_FORMATS = 500;
+//	cl_uint numFormats;
+//	cl_image_format myFormats[MAX_NUM_FORMATS];
+//
+//	ciErrNum = clGetSupportedImageFormats(get_native<backend::opencl>(q.get_context()), CL_MEM_READ_ONLY, CL_MEM_OBJECT_IMAGE2D, 255, myFormats, &numFormats);
+//	CheckCLError (ciErrNum, "clGetSupportedImageFormats() query failed.", "clGetSupportedImageFormats() query success")
 }
 
 template <class T>
@@ -1030,7 +1030,7 @@ int big_test(OCLResources& myOCL, uint arraySize, unsigned int	NUM_ITERATIONS,
 
 	// Initialize OpenCL:
 	bool bCPUDevice = false;
-	std::cout << "Sorting with GPUQSort on the " << pDeviceStr << "with type " << type_name << std::endl;
+	std::cout << "Sorting with GPUQSort on the " << pDeviceStr << " with type " << type_name << ":" << std::endl;
 	std::vector<T> original(arraySize);
 	std::copy(pArray, pArray + arraySize, original.begin());
 
