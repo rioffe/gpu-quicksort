@@ -73,7 +73,8 @@ class intel_gpu_selector : public device_selector {
   int operator()(const device& device) const override {
     /* We only give a valid score to devices that support SPIR. */
     //if (device.has_extension(cl::sycl::string_class("cl_khr_spir"))) {
-    if (device.get_info<info::device::name>().find("Intel") != std::string::npos) {
+    if (device.get_info<info::device::name>().find("Intel") != std::string::npos &&
+        device.get_info<info::device::opencl_c_version>().find("OpenCL") != std::string::npos) {
       if (device.get_info<info::device::device_type>() ==
           info::device_type::gpu) {
         return 50;
@@ -937,9 +938,9 @@ void QueryPrintDeviceInfo(queue& q) {
     std::cout << "CL_DEVICE_MEM_BASE_ADDR_ALIGN: " << mem_base_addr_align << std::endl;
     
 	size_t uMinBaseAddrAlignSizeBytes, uNumBytes;
-    //ciErrNum = clGetDeviceInfo(get_native<backend::opencl>(q.get_device()), CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE, sizeof(cl_uint), &uMinBaseAddrAlignSizeBytes, &uNumBytes);
-//	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success")
-//	printf ("CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE: %8zu\n", uMinBaseAddrAlignSizeBytes);
+    ciErrNum = clGetDeviceInfo(get_native<backend::opencl>(q.get_device()), CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE, sizeof(cl_uint), &uMinBaseAddrAlignSizeBytes, &uNumBytes);
+	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success")
+	printf ("CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE: %8zu\n", uMinBaseAddrAlignSizeBytes);
 
 	auto max_clock_frequency = q.get_device().get_info<info::device::max_clock_frequency>();
 	std::cout << "CL_DEVICE_MAX_CLOCK_FREQUENCY: " << max_clock_frequency << std::endl;
@@ -950,12 +951,12 @@ void QueryPrintDeviceInfo(queue& q) {
     auto max_mem_alloc_size = q.get_device().get_info<info::device::max_mem_alloc_size>();
 	std::cout << "CL_DEVICE_MAX_MEM_ALLOC_SIZE : " << max_mem_alloc_size << "\n" << std::endl;
 
- //   const uint MAX_NUM_FORMATS = 500;
-//	cl_uint numFormats;
-//	cl_image_format myFormats[MAX_NUM_FORMATS];
-//
-//	ciErrNum = clGetSupportedImageFormats(get_native<backend::opencl>(q.get_context()), CL_MEM_READ_ONLY, CL_MEM_OBJECT_IMAGE2D, 255, myFormats, &numFormats);
-//	CheckCLError (ciErrNum, "clGetSupportedImageFormats() query failed.", "clGetSupportedImageFormats() query success")
+    const uint MAX_NUM_FORMATS = 500;
+	cl_uint numFormats;
+	cl_image_format myFormats[MAX_NUM_FORMATS];
+
+	ciErrNum = clGetSupportedImageFormats(get_native<backend::opencl>(q.get_context()), CL_MEM_READ_ONLY, CL_MEM_OBJECT_IMAGE2D, 255, myFormats, &numFormats);
+	CheckCLError (ciErrNum, "clGetSupportedImageFormats() query failed.", "clGetSupportedImageFormats() query success")
 }
 
 template <class T>
@@ -1036,41 +1037,55 @@ int big_test(OCLResources& myOCL, uint arraySize, unsigned int	NUM_ITERATIONS,
 
   // Let's prebuild SYCL program
   // assemble kernel ids:
+  /*
   auto lqsort_kernel_id = get_kernel_id<lqsort_kernel_class<T>>();
   auto gqsort_kernel_id = get_kernel_id<gqsort_kernel_class<T>>();
   auto two_kernel_bundle = cl::sycl::get_kernel_bundle<bundle_state::input>(myOCL.contextHdl, {lqsort_kernel_id, gqsort_kernel_id});
+  totalTime = 0;
+	beginClock = seconds();
   auto program = build(two_kernel_bundle);
+  endClock = seconds();
+	totalTime += endClock - beginClock;
+	std::cout << "Time to build SYCL Program for type " << type_name << ": " << totalTime * 1000 << " ms" << std::endl;
   new (lqsort_kernel_class<T>::kernel) cl::sycl::kernel(program.get_kernel(lqsort_kernel_id));
   new (gqsort_kernel_class<T>::kernel) cl::sycl::kernel(program.get_kernel(gqsort_kernel_id));
-/*
-  //auto program = cl::sycl::get_kernel_bundle<bundle_state::input>(myOCL.contextHdl);  
+  */
+
 	//cl::sycl::program program(myOCL.contextHdl);
-    totalTime = 0;
 //#define SWAP_ORDER 1
 #ifdef SWAP_ORDER
 goto try_me_first;
 try_me_second:
 #endif
 	try {
-      bool has_it = false;
+    totalTime = 0;
+	  beginClock = seconds();
+    auto program = get_kernel_bundle<bundle_state::executable>(myOCL.contextHdl);  
+    endClock = seconds();
+	  totalTime += endClock - beginClock;
+	  std::cout << "Time to build SYCL Program: " << totalTime * 1000 << " ms" << std::endl;
+    bool has_it = false;
+    auto lqsort_kernel_id = get_kernel_id<lqsort_kernel_class<T>>();
 	  try {
-	    has_it = program.has_kernel(get_kernel_id<lqsort_kernel_class<T>>());
+	    has_it = program.has_kernel(lqsort_kernel_id);
 	  } catch (...) {}
 
 	  if (has_it)
 	    std::cout << "No need to build! We will just get it!" << std::endl;
-      else { 
-	    std::cout << "before program.build_with_kernel_type<lqsort_kernel_class<T>>();\n";
+    else { 
+	    std::cout << "before build(bundle) of lqsort_kernel_class<T>>();\n";
+      auto bundle = get_kernel_bundle<bundle_state::input>(myOCL.contextHdl, {lqsort_kernel_id});
+      totalTime = 0;
 	    beginClock = seconds();
-        program.build_with_kernel_type<lqsort_kernel_class<T>>();
-        endClock = seconds();
+      program = build(bundle);
+      endClock = seconds();
 	    totalTime += endClock - beginClock;
 	    //cl_program p = program.get();
 	    //BuildFailLog(p, myOCL.deviceID);
-        std::cout << "after program.build_with_kernel_type<lqsort_kernel_class<T>>();\n";
+      std::cout << "after build(bundle) of lqsort_kernel_class<T>>;\n";
 	    std::cout << "Time to build SYCL Program: " << totalTime * 1000 << " ms" << std::endl;
 	  }
-       new (lqsort_kernel_class<T>::kernel) cl::sycl::kernel(program.get_kernel(get_kernel_id<lqsort_kernel_class<T>>()));
+    new (lqsort_kernel_class<T>::kernel) cl::sycl::kernel(program.get_kernel(lqsort_kernel_id));
 	  std::cout << "Successfully acquired lqsort_kernel_class<T>!" << std::endl;
 	} catch (const cl::sycl::exception& e) {
 	  std::cerr << "SYCL exception caught: " << e.what() << "\n";
@@ -1084,25 +1099,34 @@ goto report_total_time;
 try_me_first:
 #endif
 	try {
+    totalTime = 0;
+	  beginClock = seconds();
+    auto program = get_kernel_bundle<bundle_state::executable>(myOCL.contextHdl);  
+    endClock = seconds();
+	  totalTime += endClock - beginClock;
+	  std::cout << "Time to build SYCL Program: " << totalTime * 1000 << " ms" << std::endl;
 	  bool has_it = false;
+    auto gqsort_kernel_id = get_kernel_id<gqsort_kernel_class<T>>();
 	  try { 
-		has_it = program.has_kernel(get_kernel_id<gqsort_kernel_class<T>>());
+		  has_it = program.has_kernel(gqsort_kernel_id);
 	  } catch (...) { std::cout << "Caught something!" << std::endl; }
 
 	  if (has_it)
 	    std::cout << "No need to build! We will just get it!" << std::endl;
-      else {
-	    std::cout << "before program.build_with_kernel_type<gqsort_kernel_class<T>>();\n";
+    else {
+	    std::cout << "before build(bundle) of gqsort_kernel_class<T>>();\n";
+      auto bundle = get_kernel_bundle<bundle_state::input>(myOCL.contextHdl, {gqsort_kernel_id});
+      totalTime = 0;
 	    beginClock = seconds();
-        program.build_with_kernel_type<gqsort_kernel_class<T>>();
-        endClock = seconds();
+      program = build(bundle);
+      endClock = seconds();
 	    totalTime += endClock - beginClock;
 	    //cl_program p = program.get();
 	    //BuildFailLog(p, myOCL.deviceID);
-        std::cout << "after program.build_with_kernel_type<gqsort_kernel_class<T>>();\n";
+      std::cout << "after build(bundle) of gqsort_kernel_class<T>>;\n";
 	    std::cout << "Time to build SYCL Program: " << totalTime * 1000 << " ms" << std::endl;
 	  }
-      new (gqsort_kernel_class<T>::kernel) cl::sycl::kernel(program.get_kernel(get_kernel_id<gqsort_kernel_class<T>>()));
+    new (gqsort_kernel_class<T>::kernel) cl::sycl::kernel(program.get_kernel(gqsort_kernel_id));
 	  std::cout << "Successfully acquired gqsort_kernel_class<T>!" << std::endl;
 	} catch (const cl::sycl::exception& e) {
 	  std::cerr << "SYCL exception caught: " << e.what() << "\n";
@@ -1115,7 +1139,7 @@ try_me_first:
 goto try_me_second;
 report_total_time:
 #endif
-*/
+
 	std::vector<double> times;
 	times.resize(NUM_ITERATIONS);
 	double AverageTime = 0.0;
@@ -1201,12 +1225,12 @@ int main(int argc, char** argv)
 	parseArgs (&myOCL, argc, argv, &NUM_ITERATIONS, pDeviceStr, pVendorStr, &widthReSz, &heightReSz, &bShowCL);
 	
 	if (bShowCL)
-	    QueryPrintDeviceInfo(myOCL.queue);
+	  QueryPrintDeviceInfo(myOCL.queue);
 		
 	uint arraySize = widthReSz*heightReSz;
-    big_test<uint>(myOCL,arraySize, NUM_ITERATIONS, pDeviceStr, "uint");
-    big_test<float>(myOCL,arraySize, NUM_ITERATIONS, pDeviceStr, "float");
-    big_test<double>(myOCL,arraySize, NUM_ITERATIONS, pDeviceStr, "double");
+  big_test<uint>(myOCL,arraySize, NUM_ITERATIONS, pDeviceStr, "uint");
+  big_test<float>(myOCL,arraySize, NUM_ITERATIONS, pDeviceStr, "float");
+  big_test<double>(myOCL,arraySize, NUM_ITERATIONS, pDeviceStr, "double");
 
 	return 0;
 }
