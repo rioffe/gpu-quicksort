@@ -30,6 +30,8 @@ POSSIBILITY OF SUCH DAMAGE.
 // QuicksortMain.cpp : Defines the entry point for the console application.
 //
 #include <CL/sycl.hpp>
+#include <CL/sycl/backend.hpp>
+#include <CL/sycl/backend/opencl.hpp>
 
 #include <stdio.h>
 #ifdef _MSC_VER
@@ -71,7 +73,8 @@ class intel_gpu_selector : public device_selector {
   int operator()(const device& device) const override {
     /* We only give a valid score to devices that support SPIR. */
     //if (device.has_extension(cl::sycl::string_class("cl_khr_spir"))) {
-    if (device.get_info<info::device::name>().find("Intel") != std::string::npos) {
+    if (device.get_info<info::device::name>().find("Intel") != std::string::npos &&
+        device.get_info<info::device::opencl_c_version>().find("OpenCL") != std::string::npos) {
       if (device.get_info<info::device::device_type>() ==
           info::device_type::gpu) {
         return 50;
@@ -112,10 +115,10 @@ double seconds() {
 typedef struct
 {	
 	// CL platform handles:
-	cl_device_id		deviceID;
+	//cl_device_id		deviceID;
 	cl::sycl::context			contextHdl;
-	cl_program			programHdl;
-	cl_command_queue	cmdQHdl;
+	//cl_program			programHdl;
+	//cl_command_queue	cmdQHdl;
 	cl::sycl::queue     queue;
 } OCLResources;
 
@@ -130,8 +133,8 @@ void Cleanup(OCLResources* pOCL, int iExitCode, bool bExit, const char* optional
 
 	memset(pOCL, 0, sizeof (OCLResources));
 
-	if (pOCL->programHdl)		{ clReleaseProgram(pOCL->programHdl);		pOCL->programHdl=NULL;	}
-	if (pOCL->cmdQHdl)			{ clReleaseCommandQueue(pOCL->cmdQHdl);		pOCL->cmdQHdl=NULL;		}
+	//if (pOCL->programHdl)		{ clReleaseProgram(pOCL->programHdl);		pOCL->programHdl=NULL;	}
+	//if (pOCL->cmdQHdl)			{ clReleaseCommandQueue(pOCL->cmdQHdl);		pOCL->cmdQHdl=NULL;		}
 	//if (pOCL->contextHdl)		{ clReleaseContext(pOCL->contextHdl);		pOCL->contextHdl= NULL;	}
 
 	if (bExit)
@@ -200,16 +203,17 @@ void parseArgs(OCLResources* pOCL, int argc, char** argv, unsigned int* test_ite
 
   /* Retrieve the underlying cl_device_id of the device asscociated with the
    * queue. */
-  pOCL->deviceID = queue.get_device().get();
+  //pOCL->deviceID = get_native<backend::opencl>(queue.get_device());
 
   /* Retrieve the underlying cl_command_queue of the queue. */
-  pOCL->cmdQHdl = queue.get();
+  //pOCL->cmdQHdl = get_native<backend::opencl>(queue);
 }
 
 //#define GET_DETAILED_PERFORMANCE 1
 #define RUN_CPU_SORTS
 #define HOST 1
 #include "Quicksort.h"
+
 
 template <class T>
 T* partition(T* left, T* right, T pivot) {
@@ -319,7 +323,7 @@ class lqsort_kernel_class {
 						 {}
 
     /// bitonic_sort: sort 2*LOCAL_THREADCOUNT elements
-    void bitonic_sort(local_ptr<T> sh_data, const uint localid, nd_item<1> id)
+    void bitonic_sort(local_ptr<T> sh_data, const uint localid, nd_item<1> id) const
     {
     	for (uint ulevel = 1; ulevel < LQSORT_LOCAL_WORKGROUP_SIZE; ulevel <<= 1) {
             for (uint j = ulevel; j > 0; j >>= 1) {
@@ -353,7 +357,7 @@ class lqsort_kernel_class {
 	                    global_ptr<T> data_out,
     					uint start, 
     					uint end, local_ptr<T> temp_, uint localid,
-						nd_item<1> id) 
+						nd_item<1> id) const
     {
     	uint tsum = end - start;
     	if (tsum == SORT_THRESHOLD) {
@@ -388,7 +392,7 @@ class lqsort_kernel_class {
 									id.barrier(access::fence_space::local_space);
 
 
-    void operator()(nd_item<1> id) {
+    void operator()(nd_item<1> id) const {
 		const size_t blockid = id.get_group(0);
         const size_t localid = id.get_local_id(0);
 
@@ -572,7 +576,7 @@ class gqsort_kernel_class {
 						parents(parentsb), news(newsb),
 						lt(ltb), gt(gtb), ltsum(ltsumb), gtsum(gtsumb), lbeg(lbegb), gbeg(gbegb) {}
 
-    void operator()(nd_item<1> id) {
+    void operator()(nd_item<1> id) const {
         const size_t blockid = id.get_group(0);
         const size_t localid = id.get_local_id(0);
 
@@ -934,7 +938,7 @@ void QueryPrintDeviceInfo(queue& q) {
     std::cout << "CL_DEVICE_MEM_BASE_ADDR_ALIGN: " << mem_base_addr_align << std::endl;
     
 	size_t uMinBaseAddrAlignSizeBytes, uNumBytes;
-    ciErrNum = clGetDeviceInfo(q.get_device().get(), CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE, sizeof(cl_uint), &uMinBaseAddrAlignSizeBytes, &uNumBytes);
+    ciErrNum = clGetDeviceInfo(get_native<backend::opencl>(q.get_device()), CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE, sizeof(cl_uint), &uMinBaseAddrAlignSizeBytes, &uNumBytes);
 	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success")
 	printf ("CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE: %8zu\n", uMinBaseAddrAlignSizeBytes);
 
@@ -951,7 +955,7 @@ void QueryPrintDeviceInfo(queue& q) {
 	cl_uint numFormats;
 	cl_image_format myFormats[MAX_NUM_FORMATS];
 
-	ciErrNum = clGetSupportedImageFormats(q.get_context().get(), CL_MEM_READ_ONLY, CL_MEM_OBJECT_IMAGE2D, 255, myFormats, &numFormats);
+	ciErrNum = clGetSupportedImageFormats(get_native<backend::opencl>(q.get_context()), CL_MEM_READ_ONLY, CL_MEM_OBJECT_IMAGE2D, 255, myFormats, &numFormats);
 	CheckCLError (ciErrNum, "clGetSupportedImageFormats() query failed.", "clGetSupportedImageFormats() query success")
 }
 
@@ -1027,39 +1031,61 @@ int big_test(OCLResources& myOCL, uint arraySize, unsigned int	NUM_ITERATIONS,
 
 	// Initialize OpenCL:
 	bool bCPUDevice = false;
-	std::cout << "Sorting with GPUQSort on the " << pDeviceStr << "with type " << type_name << std::endl;
+	std::cout << "Sorting with GPUQSort on the " << pDeviceStr << " with type " << type_name << ":" << std::endl;
 	std::vector<T> original(arraySize);
 	std::copy(pArray, pArray + arraySize, original.begin());
 
   // Let's prebuild SYCL program
-  auto program = cl::sycl::get_kernel_bundle<cl::sycl::bundle_state::executable>(myOCL.contextHdl);  
+  // assemble kernel ids:
+  /*
+  auto lqsort_kernel_id = get_kernel_id<lqsort_kernel_class<T>>();
+  auto gqsort_kernel_id = get_kernel_id<gqsort_kernel_class<T>>();
+  auto two_kernel_bundle = cl::sycl::get_kernel_bundle<bundle_state::input>(myOCL.contextHdl, {lqsort_kernel_id, gqsort_kernel_id});
+  totalTime = 0;
+	beginClock = seconds();
+  auto program = build(two_kernel_bundle);
+  endClock = seconds();
+	totalTime += endClock - beginClock;
+	std::cout << "Time to build SYCL Program for type " << type_name << ": " << totalTime * 1000 << " ms" << std::endl;
+  new (lqsort_kernel_class<T>::kernel) cl::sycl::kernel(program.get_kernel(lqsort_kernel_id));
+  new (gqsort_kernel_class<T>::kernel) cl::sycl::kernel(program.get_kernel(gqsort_kernel_id));
+  */
+
 	//cl::sycl::program program(myOCL.contextHdl);
-    totalTime = 0;
 //#define SWAP_ORDER 1
 #ifdef SWAP_ORDER
 goto try_me_first;
 try_me_second:
 #endif
 	try {
-      bool has_it = false;
+    totalTime = 0;
+	  beginClock = seconds();
+    auto program = get_kernel_bundle<bundle_state::executable>(myOCL.contextHdl);  
+    endClock = seconds();
+	  totalTime += endClock - beginClock;
+	  std::cout << "Time to build SYCL Program: " << totalTime * 1000 << " ms" << std::endl;
+    bool has_it = false;
+    auto lqsort_kernel_id = get_kernel_id<lqsort_kernel_class<T>>();
 	  try {
-	    has_it = program.has_kernel<lqsort_kernel_class<T>>();
+	    has_it = program.has_kernel(lqsort_kernel_id);
 	  } catch (...) {}
 
 	  if (has_it)
 	    std::cout << "No need to build! We will just get it!" << std::endl;
-      else { 
-	    std::cout << "before program.build_with_kernel_type<lqsort_kernel_class<T>>();\n";
+    else { 
+	    std::cout << "before build(bundle) of lqsort_kernel_class<T>>();\n";
+      auto bundle = get_kernel_bundle<bundle_state::input>(myOCL.contextHdl, {lqsort_kernel_id});
+      totalTime = 0;
 	    beginClock = seconds();
-        program.build_with_kernel_type<lqsort_kernel_class<T>>();
-        endClock = seconds();
+      program = build(bundle);
+      endClock = seconds();
 	    totalTime += endClock - beginClock;
 	    //cl_program p = program.get();
 	    //BuildFailLog(p, myOCL.deviceID);
-        std::cout << "after program.build_with_kernel_type<lqsort_kernel_class<T>>();\n";
+      std::cout << "after build(bundle) of lqsort_kernel_class<T>>;\n";
 	    std::cout << "Time to build SYCL Program: " << totalTime * 1000 << " ms" << std::endl;
 	  }
-       new (lqsort_kernel_class<T>::kernel) cl::sycl::kernel(program.get_kernel<lqsort_kernel_class<T>>());
+    new (lqsort_kernel_class<T>::kernel) cl::sycl::kernel(program.get_kernel(lqsort_kernel_id));
 	  std::cout << "Successfully acquired lqsort_kernel_class<T>!" << std::endl;
 	} catch (const cl::sycl::exception& e) {
 	  std::cerr << "SYCL exception caught: " << e.what() << "\n";
@@ -1073,25 +1099,34 @@ goto report_total_time;
 try_me_first:
 #endif
 	try {
+    totalTime = 0;
+	  beginClock = seconds();
+    auto program = get_kernel_bundle<bundle_state::executable>(myOCL.contextHdl);  
+    endClock = seconds();
+	  totalTime += endClock - beginClock;
+	  std::cout << "Time to build SYCL Program: " << totalTime * 1000 << " ms" << std::endl;
 	  bool has_it = false;
+    auto gqsort_kernel_id = get_kernel_id<gqsort_kernel_class<T>>();
 	  try { 
-		has_it = program.has_kernel<gqsort_kernel_class<T>>();
+		  has_it = program.has_kernel(gqsort_kernel_id);
 	  } catch (...) { std::cout << "Caught something!" << std::endl; }
 
 	  if (has_it)
 	    std::cout << "No need to build! We will just get it!" << std::endl;
-      else {
-	    std::cout << "before program.build_with_kernel_type<gqsort_kernel_class<T>>();\n";
+    else {
+	    std::cout << "before build(bundle) of gqsort_kernel_class<T>>();\n";
+      auto bundle = get_kernel_bundle<bundle_state::input>(myOCL.contextHdl, {gqsort_kernel_id});
+      totalTime = 0;
 	    beginClock = seconds();
-        program.build_with_kernel_type<gqsort_kernel_class<T>>();
-        endClock = seconds();
+      program = build(bundle);
+      endClock = seconds();
 	    totalTime += endClock - beginClock;
 	    //cl_program p = program.get();
 	    //BuildFailLog(p, myOCL.deviceID);
-        std::cout << "after program.build_with_kernel_type<gqsort_kernel_class<T>>();\n";
+      std::cout << "after build(bundle) of gqsort_kernel_class<T>>;\n";
 	    std::cout << "Time to build SYCL Program: " << totalTime * 1000 << " ms" << std::endl;
 	  }
-      new (gqsort_kernel_class<T>::kernel) cl::sycl::kernel(program.get_kernel<gqsort_kernel_class<T>>());
+    new (gqsort_kernel_class<T>::kernel) cl::sycl::kernel(program.get_kernel(gqsort_kernel_id));
 	  std::cout << "Successfully acquired gqsort_kernel_class<T>!" << std::endl;
 	} catch (const cl::sycl::exception& e) {
 	  std::cerr << "SYCL exception caught: " << e.what() << "\n";
@@ -1190,12 +1225,12 @@ int main(int argc, char** argv)
 	parseArgs (&myOCL, argc, argv, &NUM_ITERATIONS, pDeviceStr, pVendorStr, &widthReSz, &heightReSz, &bShowCL);
 	
 	if (bShowCL)
-	    QueryPrintDeviceInfo(myOCL.queue);
+	  QueryPrintDeviceInfo(myOCL.queue);
 		
 	uint arraySize = widthReSz*heightReSz;
-    big_test<uint>(myOCL,arraySize, NUM_ITERATIONS, pDeviceStr, "uint");
-    big_test<float>(myOCL,arraySize, NUM_ITERATIONS, pDeviceStr, "float");
-    big_test<double>(myOCL,arraySize, NUM_ITERATIONS, pDeviceStr, "double");
+  big_test<uint>(myOCL,arraySize, NUM_ITERATIONS, pDeviceStr, "uint");
+  big_test<float>(myOCL,arraySize, NUM_ITERATIONS, pDeviceStr, "float");
+  big_test<double>(myOCL,arraySize, NUM_ITERATIONS, pDeviceStr, "double");
 
 	return 0;
 }
