@@ -30,8 +30,6 @@ POSSIBILITY OF SUCH DAMAGE.
 // QuicksortMain.cpp : Defines the entry point for the console application.
 //
 #include <CL/sycl.hpp>
-#include <CL/sycl/backend.hpp>
-#include <CL/sycl/backend/opencl.hpp>
 
 #include <stdio.h>
 #ifdef _MSC_VER
@@ -46,7 +44,6 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <time.h>
 #include <unistd.h>
 #endif
-#include "OpenCLUtils.h"
 #include <math.h>
 #include <iostream>
 #include <random>
@@ -73,8 +70,7 @@ class intel_gpu_selector : public device_selector {
   int operator()(const device& device) const override {
     /* We only give a valid score to devices that support SPIR. */
     //if (device.has_extension(cl::sycl::string_class("cl_khr_spir"))) {
-    if (device.get_info<info::device::name>().find("Intel") != std::string::npos &&
-        device.get_info<info::device::opencl_c_version>().find("OpenCL") != std::string::npos) {
+    if (device.get_info<info::device::name>().find("Intel") != std::string::npos) {
       if (device.get_info<info::device::device_type>() ==
           info::device_type::gpu) {
         return 50;
@@ -114,11 +110,7 @@ double seconds() {
  
 typedef struct
 {	
-	// CL platform handles:
-	//cl_device_id		deviceID;
 	cl::sycl::context			contextHdl;
-	//cl_program			programHdl;
-	//cl_command_queue	cmdQHdl;
 	cl::sycl::queue     queue;
 } OCLResources;
 
@@ -132,10 +124,6 @@ void Cleanup(OCLResources* pOCL, int iExitCode, bool bExit, const char* optional
 		printf ("%s\n", optionalErrorMessage);
 
 	memset(pOCL, 0, sizeof (OCLResources));
-
-	//if (pOCL->programHdl)		{ clReleaseProgram(pOCL->programHdl);		pOCL->programHdl=NULL;	}
-	//if (pOCL->cmdQHdl)			{ clReleaseCommandQueue(pOCL->cmdQHdl);		pOCL->cmdQHdl=NULL;		}
-	//if (pOCL->contextHdl)		{ clReleaseContext(pOCL->contextHdl);		pOCL->contextHdl= NULL;	}
 
 	if (bExit)
 		exit (iExitCode);
@@ -200,20 +188,11 @@ void parseArgs(OCLResources* pOCL, int argc, char** argv, unsigned int* test_ite
   /* Retrieve the underlying cl_context of the context associated with the
    * queue. */
   pOCL->contextHdl = queue.get_context();
-
-  /* Retrieve the underlying cl_device_id of the device asscociated with the
-   * queue. */
-  //pOCL->deviceID = get_native<backend::opencl>(queue.get_device());
-
-  /* Retrieve the underlying cl_command_queue of the queue. */
-  //pOCL->cmdQHdl = get_native<backend::opencl>(queue);
 }
 
 //#define GET_DETAILED_PERFORMANCE 1
 #define RUN_CPU_SORTS
-#define HOST 1
 #include "Quicksort.h"
-
 
 template <class T>
 T* partition(T* left, T* right, T pivot) {
@@ -881,11 +860,6 @@ void QueryPrintDeviceInfo(queue& q) {
     auto mem_base_addr_align = q.get_device().get_info<info::device::mem_base_addr_align>();
     std::cout << "CL_DEVICE_MEM_BASE_ADDR_ALIGN: " << mem_base_addr_align << std::endl;
     
-	size_t uMinBaseAddrAlignSizeBytes, uNumBytes;
-    ciErrNum = clGetDeviceInfo(get_native<backend::opencl>(q.get_device()), CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE, sizeof(cl_uint), &uMinBaseAddrAlignSizeBytes, &uNumBytes);
-	CheckCLError (ciErrNum, "clGetDeviceInfo() query failed.", "clGetDeviceinfo() query success")
-	printf ("CL_DEVICE_MIN_DATA_TYPE_ALIGN_SIZE: %8zu\n", uMinBaseAddrAlignSizeBytes);
-
 	auto max_clock_frequency = q.get_device().get_info<info::device::max_clock_frequency>();
 	std::cout << "CL_DEVICE_MAX_CLOCK_FREQUENCY: " << max_clock_frequency << std::endl;
     auto image2D_max_width = q.get_device().get_info<info::device::image2d_max_width>();
@@ -894,13 +868,6 @@ void QueryPrintDeviceInfo(queue& q) {
 	std::cout << "CL_DEVICE_LOCAL_MEM_SIZE     : " << local_mem_size << std::endl;
     auto max_mem_alloc_size = q.get_device().get_info<info::device::max_mem_alloc_size>();
 	std::cout << "CL_DEVICE_MAX_MEM_ALLOC_SIZE : " << max_mem_alloc_size << "\n" << std::endl;
-
-    const uint MAX_NUM_FORMATS = 500;
-	cl_uint numFormats;
-	cl_image_format myFormats[MAX_NUM_FORMATS];
-
-	ciErrNum = clGetSupportedImageFormats(get_native<backend::opencl>(q.get_context()), CL_MEM_READ_ONLY, CL_MEM_OBJECT_IMAGE2D, 255, myFormats, &numFormats);
-	CheckCLError (ciErrNum, "clGetSupportedImageFormats() query failed.", "clGetSupportedImageFormats() query success")
 }
 
 template <class T>
@@ -1024,8 +991,6 @@ try_me_second:
       program = build(bundle);
       endClock = seconds();
 	    totalTime += endClock - beginClock;
-	    //cl_program p = program.get();
-	    //BuildFailLog(p, myOCL.deviceID);
       std::cout << "after build(bundle) of lqsort_kernel_class<T>>;\n";
 	    std::cout << "Time to build SYCL Program: " << totalTime * 1000 << " ms" << std::endl;
 	  }
@@ -1065,8 +1030,6 @@ try_me_first:
       program = build(bundle);
       endClock = seconds();
 	    totalTime += endClock - beginClock;
-	    //cl_program p = program.get();
-	    //BuildFailLog(p, myOCL.deviceID);
       std::cout << "after build(bundle) of gqsort_kernel_class<T>>;\n";
 	    std::cout << "Time to build SYCL Program: " << totalTime * 1000 << " ms" << std::endl;
 	  }
@@ -1164,7 +1127,6 @@ int main(int argc, char** argv)
 	bool			bShowCL = false;
 
 	uint			heightReSz, widthReSz;
-
 
 	parseArgs (&myOCL, argc, argv, &NUM_ITERATIONS, pDeviceStr, pVendorStr, &widthReSz, &heightReSz, &bShowCL);
 	

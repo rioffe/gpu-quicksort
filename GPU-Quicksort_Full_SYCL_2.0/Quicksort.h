@@ -30,7 +30,6 @@ POSSIBILITY OF SUCH DAMAGE.
 #ifndef QUICKSORT_H
 #define QUICKSORT_H
 
-#ifdef HOST
 template <class T>
 T median(T x1, T x2, T x3) {
 	if (x1 < x2) {
@@ -93,24 +92,6 @@ T median_select(T x1, T x2, T x3) {
 		}
 	}
 }
-
-#else // HOST
-uint median(uint x1, uint x2, uint x3) {
-	if (x1 < x2) {
-		if (x2 < x3) {
-			return x2;
-		} else {
-      return select(x1, x3, x1 < x3);
-		}
-	} else { // x1 >= x2
-		if (x1 < x3) {
-			return x1;
-		} else { // x1 >= x3
-      return select(x2, x3, x2 < x3);
-		}
-	}
-}
-#endif //HOST
 
 #define TRUST_BUT_VERIFY 1
 // Note that SORT_THRESHOLD should always be 2X LQSORT_LOCAL_WORKGROUP_SIZE due to the use of bitonic sort
