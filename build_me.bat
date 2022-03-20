@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-for %%a in (GPU-Quicksort_OpenCL_1.2 GPU-Quicksort_OpenCL_2.0 GPU-Quicksort_SYCL GPU-Quicksort_Full_SYCL) do (
+for %%a in (GPU-Quicksort_OpenCL_1.2 GPU-Quicksort_OpenCL_2.0 GPU-Quicksort_SYCL GPU-Quicksort_Full_SYCL GPU-Quicksort_Full_SYCL_2.0) do (
   echo --------------- Algorithm %%a ----------------
   cd %%a
   echo ... Building ...

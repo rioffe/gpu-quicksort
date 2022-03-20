@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-for algorithm_name in GPU-Quicksort_OpenCL_1.2 GPU-Quicksort_OpenCL_2.0 GPU-Quicksort_SYCL GPU-Quicksort_Full_SYCL; do
+for algorithm_name in GPU-Quicksort_OpenCL_1.2 GPU-Quicksort_OpenCL_2.0 GPU-Quicksort_SYCL GPU-Quicksort_Full_SYCL GPU-Quicksort_Full_SYCL_2.0; do
   echo --------------- Algorithm $algorithm_name ----------------
   cd $algorithm_name
   mkdir build
