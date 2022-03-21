@@ -50,7 +50,6 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <algorithm>
 #include <iterator>
 #include <vector>
-#include <map>
 
 #include "tbb/parallel_sort.h"
 using namespace cl::sycl;
@@ -68,8 +67,6 @@ class intel_gpu_selector : public device_selector {
    * platform. Note that all platforms are evaluated whenever there is
    * a device selection. */
   int operator()(const device& device) const override {
-    /* We only give a valid score to devices that support SPIR. */
-    //if (device.has_extension(cl::sycl::string_class("cl_khr_spir"))) {
     if (device.get_info<info::device::name>().find("Intel") != std::string::npos) {
       if (device.get_info<info::device::device_type>() ==
           info::device_type::gpu) {
@@ -110,13 +107,11 @@ double seconds() {
  
 typedef struct
 {	
-	cl::sycl::context			contextHdl;
-	cl::sycl::queue     queue;
+	context		contextHdl;
+	queue     queue;
 } OCLResources;
 
 // Globals:
-/* Create variable to store OpenCL errors. */
-::cl_int		ciErrNum = 0;
 
 void Cleanup(OCLResources* pOCL, int iExitCode, bool bExit, const char* optionalErrorMessage)
 {
@@ -135,21 +130,15 @@ void parseArgs(OCLResources* pOCL, int argc, char** argv, unsigned int* test_ite
   std::string pVendorWStr;
   const char sUsageString[512] = "Usage: Quicksort [num test iterations] [cpu|gpu] [intel|amd|nvidia] [SurfWidth(^2 only)] [SurfHeight(^2 only)] [show_CL | no_show_CL]";
   
-  if (argc != 7)
-  {
+  if (argc != 7) {
   	Cleanup (pOCL, -1, true, sUsageString);
-  }
-  else
-  {
+  } else {
   	*test_iterations	= atoi (argv[1]);
-  	pDeviceWStr			= std::string(argv[2]);			// "cpu" or "gpu"	
-  	pVendorWStr			= std::string(argv[3]);			// "intel" or "amd" or "nvidia"
-  	*widthReSz	= atoi (argv[4]);
-  	*heightReSz	= atoi (argv[5]);
-  	if (argv[6][0]=='s')
-  		*pbShowCL = true;
-  	else
-  		*pbShowCL = false;
+  	pDeviceWStr		  	= std::string(argv[2]);			// "cpu" or "gpu"	
+  	pVendorWStr		  	= std::string(argv[3]);			// "intel" or "amd" or "nvidia"
+  	*widthReSz	      = atoi (argv[4]);
+  	*heightReSz	      = atoi (argv[5]);
+    *pbShowCL         = (argv[6][0]=='s');
   }
   sprintf (pDeviceStr, "%s", pDeviceWStr.c_str());
   sprintf (pVendorStr, "%s", pVendorWStr.c_str());
@@ -158,20 +147,20 @@ void parseArgs(OCLResources* pOCL, int argc, char** argv, unsigned int* test_ite
     device_selector* pds = 0;
     if (pVendorStr == std::string("intel")) {
       if (pDeviceStr == std::string("gpu")) {
-          static intel_gpu_selector selector;
-		  pds = &selector;
-	  } else if (pDeviceStr == std::string("cpu")) {
-		  static cpu_selector selector;
-		  pds = &selector;
+        static intel_gpu_selector selector;
+		    pds = &selector;
+	    } else if (pDeviceStr == std::string("cpu")) {
+		    static cpu_selector selector;
+		    pds = &selector;
+	    }
+	  } else {
+		  static default_selector selector;
+	  	pds = &selector;
 	  }
-	} else {
-		static default_selector selector;
-		pds = &selector;
-	}
 
     device d(*pds);
 
-    queue queue(*pds, [](cl::sycl::exception_list l) {
+    queue queue(*pds, [](exception_list l) {
       for (auto ep : l) {
         try {
           std::rethrow_exception(ep);
@@ -185,8 +174,6 @@ void parseArgs(OCLResources* pOCL, int argc, char** argv, unsigned int* test_ite
   
   auto queue = get_queue();
   pOCL->queue = queue;
-  /* Retrieve the underlying cl_context of the context associated with the
-   * queue. */
   pOCL->contextHdl = queue.get_context();
 }
 
@@ -195,59 +182,11 @@ void parseArgs(OCLResources* pOCL, int argc, char** argv, unsigned int* test_ite
 #include "Quicksort.h"
 
 template <class T>
-T* partition(T* left, T* right, T pivot) {
-    // move pivot to the end
-    T temp = *right;
-    *right = pivot;
-    *left = temp;
-
-    T* store = left;
-
-    for(T* p = left; p != right; p++) {
-        if (*p < pivot) {
-            temp = *store;
-            *store = *p;
-            *p = temp;
-            store++;
-        }
-    }
-
-    temp = *store;
-    *store = pivot;
-    *right = temp;
-
-    return store;
-}
-
-template <class T>
-void quicksort(T* data, int left, int right)
-{
-    T* store = partition(data + left, data + right, data[left]);
-    int nright = store-data;
-    int nleft = nright+1;
-
-    if (left < nright) {
-      if (nright - left > 32) {
-        quicksort(data, left, nright);
-      } else
-        std::sort(data + left, data + nright + 1);
-    }
-
-    if (nleft < right) {
-      if (right - nleft > 32)  {
-		    quicksort(data, nleft, right); 
-      } else {
-        std::sort(data + nleft, data + right + 1);
-      }
-	}
-}
-
-template <class T>
 void plus_prescan(T *a, T *b) {
-    T av = *a;
+  T av = *a;
 	T bv = *b;
-    *a = bv;
-    *b = bv + av;
+  *a = bv;
+  *b = bv + av;
 }
 
 // record to push start of the sequence, end of the sequence and direction of sorting on internal stack
@@ -270,27 +209,25 @@ struct workstack_record {
 template <class T>
 class lqsort_kernel_class {
 	public:
-    static cl::sycl::kernel* kernel;
+    static kernel* kernel;
 
-	using discard_read_write_accessor = 
-	  accessor<T, 1, access::mode::discard_read_write, access::target::global_buffer>;
-	using seqs_read_accessor = accessor<work_record<T>, 1, access::mode::read, access::target::global_buffer>;
-	
+	  using discard_read_write_accessor = accessor<T, 1, access::mode::discard_read_write, access::target::global_buffer>;
+	  using seqs_read_accessor = accessor<work_record<T>, 1, access::mode::read, access::target::global_buffer>;
     using local_uint_read_write_accessor = accessor<uint, 1, access::mode::read_write, access::target::local>;
     using local_int_read_write_accessor = accessor<int, 1, access::mode::read_write, access::target::local>;
     using local_T_read_write_accessor = accessor<T, 1, access::mode::read_write, access::target::local>;
     using local_workstack_record_read_write_accessor = accessor<workstack_record, 1, access::mode::read_write, access::target::local>;
 
     lqsort_kernel_class(discard_read_write_accessor db,
-	                    discard_read_write_accessor dnb, 
-						seqs_read_accessor seqsb,
-						local_workstack_record_read_write_accessor workstackb,
-						local_int_read_write_accessor workstack_pointerb,
-						local_T_read_write_accessor mysb, 
-						local_T_read_write_accessor mysnb, 
-						local_T_read_write_accessor tempb,
-						local_uint_read_write_accessor ltsumb,
-						local_uint_read_write_accessor gtsumb) :
+	                      discard_read_write_accessor dnb, 
+						            seqs_read_accessor seqsb,
+						            local_workstack_record_read_write_accessor workstackb,
+						            local_int_read_write_accessor workstack_pointerb,
+						            local_T_read_write_accessor mysb, 
+						            local_T_read_write_accessor mysnb, 
+						            local_T_read_write_accessor tempb,
+						            local_uint_read_write_accessor ltsumb,
+						            local_uint_read_write_accessor gtsumb) :
 						d(db), dn(dnb), seqs(seqsb) ,
 						workstack(workstackb),
 						workstack_pointer(workstack_pointerb),
@@ -302,38 +239,38 @@ class lqsort_kernel_class {
     void bitonic_sort(local_ptr<T> sh_data, const uint localid, nd_item<1> id) const
     {
     	for (uint ulevel = 1; ulevel < LQSORT_LOCAL_WORKGROUP_SIZE; ulevel <<= 1) {
-            for (uint j = ulevel; j > 0; j >>= 1) {
-                uint pos = 2*localid - (localid & (j - 1));
+        for (uint j = ulevel; j > 0; j >>= 1) {
+          uint pos = 2*localid - (localid & (j - 1));
     
     			uint direction = localid & ulevel;
     			uint av = sh_data[pos], bv = sh_data[pos + j];
     			const uint sortThem = av > bv;
-    			const uint greater = cl::sycl::select(bv, av, sortThem);
-    			const uint lesser  = cl::sycl::select(av, bv, sortThem);
+    			const uint greater = select(bv, av, sortThem);
+    			const uint lesser  = select(av, bv, sortThem);
     
-    			sh_data[pos]     = cl::sycl::select(lesser, greater, direction);
-    			sh_data[pos + j] = cl::sycl::select(greater, lesser, direction);
-				id.barrier(access::fence_space::local_space);
-            }
+    			sh_data[pos]     = select(lesser, greater, direction);
+    			sh_data[pos + j] = select(greater, lesser, direction);
+			  	id.barrier(access::fence_space::local_space);
         }
+      }
     
     	for (uint j = LQSORT_LOCAL_WORKGROUP_SIZE; j > 0; j >>= 1) {
-            uint pos = 2*localid - (localid & (j - 1));
+        uint pos = 2*localid - (localid & (j - 1));
     
     		uint av = sh_data[pos], bv = sh_data[pos + j];
     		const uint sortThem = av > bv;
-    		sh_data[pos]      = cl::sycl::select(av, bv, sortThem);
-    		sh_data[pos + j]  = cl::sycl::select(bv, av, sortThem);
+    		sh_data[pos]      = select(av, bv, sortThem);
+    		sh_data[pos + j]  = select(bv, av, sortThem);
     
 		    id.barrier(access::fence_space::local_space);
-        }
+      }
     }
 
     void sort_threshold(local_ptr<T> data_in, 
-	                    global_ptr<T> data_out,
-    					uint start, 
-    					uint end, local_ptr<T> temp_, uint localid,
-						nd_item<1> id) const
+  	                    global_ptr<T> data_out,
+              					uint start, 
+    				          	uint end, local_ptr<T> temp_, uint localid,
+						            nd_item<1> id) const
     {
     	uint tsum = end - start;
     	if (tsum == SORT_THRESHOLD) {
@@ -362,19 +299,18 @@ class lqsort_kernel_class {
 
 #define PUSH(START, END) 			if (localid == 0) { \
 										workstack_pointer[0] ++; \
-                                        workstack_record wr{ (START), (END), direction ^ 1 }; \
+                    workstack_record wr{ (START), (END), direction ^ 1 }; \
 										workstack[workstack_pointer[0]] = wr; \
 									} \
 									id.barrier(access::fence_space::local_space);
 
-
     void operator()(nd_item<1> id) const {
-		const size_t blockid = id.get_group(0);
-        const size_t localid = id.get_local_id(0);
+	  	const size_t blockid = id.get_group(0);
+      const size_t localid = id.get_local_id(0);
 
-        local_ptr<T> s, sn;
+      local_ptr<T> s, sn;
 	    uint i, lt, gt;
-		T tmp;
+		  T tmp;
 	
     	work_record<T> block = seqs[blockid];
     	const uint d_offset = block.start;
@@ -399,9 +335,9 @@ class lqsort_kernel_class {
     			mys[i] = dn[i+d_offset];
     		}
     	}
-		id.barrier(access::fence_space::local_space);
+	  	id.barrier(access::fence_space::local_space);
 
-        while (workstack_pointer[0] >= 0) { 
+      while (workstack_pointer[0] >= 0) { 
     		// pop up the stack
     		workstack_record wr = workstack[workstack_pointer[0]];
     		start = wr.start;
@@ -441,8 +377,8 @@ class lqsort_kernel_class {
     		}
     		
     		// calculate cumulative sums
-        uint lttmp = exclusive_scan_over_group(id.get_group(), lt, std::plus<uint>());
-        uint gttmp = inclusive_scan_over_group(id.get_group(), gt, std::plus<uint>());
+        uint lttmp = exclusive_scan_over_group(id.get_group(), lt, plus<>());
+        uint gttmp = inclusive_scan_over_group(id.get_group(), gt, plus<>());
         if (localid == LQSORT_LOCAL_WORKGROUP_SIZE-1) { // last work
           ltsum[0] = lttmp+lt;
           gtsum[0] = gttmp;
@@ -487,14 +423,11 @@ class lqsort_kernel_class {
 	}
 
 	private:
-    discard_read_write_accessor d, dn;
+  discard_read_write_accessor d, dn;
 	seqs_read_accessor seqs;
-
-    local_workstack_record_read_write_accessor workstack;
+  local_workstack_record_read_write_accessor workstack;
 	local_int_read_write_accessor workstack_pointer;
-	
 	local_T_read_write_accessor mys, mysn, temp;
-
 	local_uint_read_write_accessor ltsum, gtsum;
 };
 
@@ -504,41 +437,40 @@ class lqsort_kernel_class {
 template <class T>
 class gqsort_kernel_class {
 	public:
-    static cl::sycl::kernel* kernel;
+    static kernel* kernel;
 
-	using blocks_read_accessor = accessor<block_record<T>, 1, access::mode::read, access::target::global_buffer>;
-	using parents_read_write_accessor = accessor<parent_record, 1, access::mode::read_write, access::target::global_buffer>;
-	using news_write_accessor = accessor<work_record<T>, 1, access::mode::write, access::target::global_buffer>;
-	using discard_read_write_accessor = 
-	  accessor<T, 1, access::mode::discard_read_write, access::target::global_buffer>;
-    using local_read_write_accessor = accessor<uint, 1, access::mode::read_write, access::target::local>;
+	  using discard_read_write_accessor = accessor<T, 1, access::mode::discard_read_write, access::target::global_buffer>;
+	  using blocks_read_accessor        = accessor<block_record<T>, 1, access::mode::read, access::target::global_buffer>;
+	  using parents_read_write_accessor = accessor<parent_record, 1, access::mode::read_write, access::target::global_buffer>;
+	  using news_write_accessor         = accessor<work_record<T>, 1, access::mode::write, access::target::global_buffer>;
+    using local_read_write_accessor   = accessor<uint, 1, access::mode::read_write, access::target::local>;
 
     gqsort_kernel_class(discard_read_write_accessor db,
-	                    discard_read_write_accessor dnb,
-	                    blocks_read_accessor blocksb,
-	                    parents_read_write_accessor parentsb,
-	                    news_write_accessor newsb, 
-						local_read_write_accessor ltsumb, 
-						local_read_write_accessor gtsumb, 
-						local_read_write_accessor lbegb, 
-						local_read_write_accessor gbegb) :
+	                      discard_read_write_accessor dnb,
+	                      blocks_read_accessor blocksb,
+	                      parents_read_write_accessor parentsb,
+	                      news_write_accessor newsb, 
+			            			local_read_write_accessor ltsumb, 
+					            	local_read_write_accessor gtsumb, 
+						            local_read_write_accessor lbegb, 
+					            	local_read_write_accessor gbegb) :
 						d(db), dn(dnb), blocks(blocksb), 
 						parents(parentsb), news(newsb),
 						ltsum(ltsumb), gtsum(gtsumb), lbeg(lbegb), gbeg(gbegb) {}
 
     void operator()(nd_item<1> id) const {
-        const size_t blockid = id.get_group(0);
-        const size_t localid = id.get_local_id(0);
+      const size_t blockid = id.get_group(0);
+      const size_t localid = id.get_local_id(0);
 
-        uint lt = 0, gt = 0, lttmp, gttmp, i, lfrom, gfrom;
-		T lpivot, gpivot, tmp;
+      uint lt = 0, gt = 0, lttmp, gttmp, i, lfrom, gfrom;
+		  T lpivot, gpivot, tmp;
 
 	    // Get the sequence block assigned to this work group
 	    block_record<T> block = blocks[blockid];
 	    uint start = block.start, end = block.end, direction = block.direction;
-		T pivot = block.pivot;
+	  	T pivot = block.pivot;
 
-        auto& pparent = parents[block.parent];
+      auto& pparent = parents[block.parent];
 
 	    T *s, *sn;
 
@@ -567,8 +499,8 @@ class gqsort_kernel_class {
 	    }
 
     	// calculate cumulative sums
-      lttmp = exclusive_scan_over_group(id.get_group(), lt, std::plus<uint>());
-      gttmp = exclusive_scan_over_group(id.get_group(), gt, std::plus<uint>());
+      lttmp = exclusive_scan_over_group(id.get_group(), lt, plus<>());
+      gttmp = exclusive_scan_over_group(id.get_group(), gt, plus<>());
       if (localid == (GQSORT_LOCAL_WORKGROUP_SIZE - 1)) { // last work
         ltsum[0] = lttmp+lt;
         gtsum[0] = gttmp+gt;
@@ -577,34 +509,34 @@ class gqsort_kernel_class {
 
 	    // Allocate memory in the sequence this block is a part of
 	    if (localid == 0) {
-			  cl::sycl::atomic<uint> psstart_a(multi_ptr<uint, access::address_space::global_space>(&pparent.sstart));
-			  cl::sycl::atomic<uint> psend_a(multi_ptr<uint, access::address_space::global_space>(&pparent.send));
+			  atomic<uint> psstart_a(multi_ptr<uint, access::address_space::global_space>(&pparent.sstart));
+			  atomic<uint> psend_a(multi_ptr<uint, access::address_space::global_space>(&pparent.send));
 	    	// Atomic increment allocates memory to write to.
-	    	lbeg[0] = cl::sycl::atomic_fetch_add(psstart_a, ltsum[0]);
+	    	lbeg[0] = atomic_fetch_add(psstart_a, ltsum[0]);
 	    	// Atomic is necessary since multiple blocks access this
-	    	gbeg[0] = cl::sycl::atomic_fetch_sub(psend_a, gtsum[0]) - gtsum[0];
+	    	gbeg[0] = atomic_fetch_sub(psend_a, gtsum[0]) - gtsum[0];
 	    }
       id.barrier(access::fence_space::global_and_local);
 
-		// Allocate locations for work items
-		lfrom = lbeg[0] + lttmp;
-		gfrom = gbeg[0] + gttmp;
+		  // Allocate locations for work items
+		  lfrom = lbeg[0] + lttmp;
+		  gfrom = gbeg[0] + gttmp;
 
-       	// go thru data again writing elements to their correct position
-       	for(i = start + localid; i < end; i += GQSORT_LOCAL_WORKGROUP_SIZE) {
-       		tmp = s[i];
-       		// increment counts
-       		if (tmp < pivot) 
-       			sn[lfrom++] = tmp;
+     	// go thru data again writing elements to their correct position
+     	for(i = start + localid; i < end; i += GQSORT_LOCAL_WORKGROUP_SIZE) {
+     		tmp = s[i];
+     		// increment counts
+     		if (tmp < pivot) 
+     			sn[lfrom++] = tmp;
        
-       		if (tmp > pivot) 
-       			sn[gfrom++] = tmp;
-       	}
-        id.barrier(access::fence_space::global_and_local);
+     		if (tmp > pivot) 
+     			sn[gfrom++] = tmp;
+     	}
+      id.barrier(access::fence_space::global_and_local);
 
     	if (localid == 0) {
-			cl::sycl::atomic<uint> pblockcount_a(multi_ptr<uint, access::address_space::global_space>(&pparent.blockcount));
-    		if (cl::sycl::atomic_fetch_sub(pblockcount_a, (uint)1) == 0) {
+		  	atomic<uint> pblockcount_a(multi_ptr<uint, access::address_space::global_space>(&pparent.blockcount));
+    		if (atomic_fetch_sub(pblockcount_a, (uint)1) == 0) {
     			uint sstart = pparent.sstart;
     			uint send = pparent.send;
     			uint oldstart = pparent.oldstart;
@@ -631,9 +563,9 @@ class gqsort_kernel_class {
     			news[2*blockid + 1] = work_record<T>{send, oldend, gpivot, direction};
     		}
     	}
-	}
+	  }
 	private:
-      discard_read_write_accessor d, dn;
+    discard_read_write_accessor d, dn;
 	  blocks_read_accessor blocks;
 	  parents_read_write_accessor parents;
 	  news_write_accessor news;
@@ -642,26 +574,26 @@ class gqsort_kernel_class {
 
 // Note that for every type that we intend to sort we need to allocate this
 template <>
-cl::sycl::kernel* gqsort_kernel_class<uint>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
+kernel* gqsort_kernel_class<uint>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
 template <>
-cl::sycl::kernel* lqsort_kernel_class<uint>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
+kernel* lqsort_kernel_class<uint>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
 template <>
-cl::sycl::kernel* gqsort_kernel_class<float>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
+kernel* gqsort_kernel_class<float>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
 template <>
-cl::sycl::kernel* lqsort_kernel_class<float>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
+kernel* lqsort_kernel_class<float>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
 template <>
-cl::sycl::kernel* gqsort_kernel_class<double>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
+kernel* gqsort_kernel_class<double>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
 template <>
-cl::sycl::kernel* lqsort_kernel_class<double>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
+kernel* lqsort_kernel_class<double>::kernel = (cl::sycl::kernel*)malloc(sizeof(cl::sycl::kernel));
 
 template <class T>
 void gqsort(OCLResources *pOCL, 
             buffer<T>& d_buffer, 
-			buffer<T>& dn_buffer, 
-			std::vector<block_record<T>>& blocks, 
-			std::vector<parent_record>& parents, 
-			std::vector<work_record<T>>& news, 
-			bool reset) {
+		      	buffer<T>& dn_buffer, 
+			      std::vector<block_record<T>>& blocks, 
+		      	std::vector<parent_record>& parents, 
+			      std::vector<work_record<T>>& news, 
+			      bool reset) {
 #ifdef GET_DETAILED_PERFORMANCE
 	static double absoluteTotal = 0.0;
 	static uint count = 0;
@@ -678,31 +610,30 @@ void gqsort(OCLResources *pOCL,
 	news.resize(blocks.size()*2);
 	// Create buffer objects for memory.
 	buffer<block_record<T>>  blocks_buffer(blocks.data(), blocks.size(), {property::buffer::use_host_ptr()});
-	buffer<parent_record>  parents_buffer(parents.data(), parents.size(), {property::buffer::use_host_ptr()});
-	buffer<work_record<T>>  news_buffer(news.data(), news.size(), {property::buffer::use_host_ptr()});
+	buffer<parent_record>    parents_buffer(parents.data(), parents.size(), {property::buffer::use_host_ptr()});
+	buffer<work_record<T>>   news_buffer(news.data(), news.size(), {property::buffer::use_host_ptr()});
 
-    pOCL->queue.submit([&](handler& cgh) {
+  pOCL->queue.submit([&](handler& cgh) {
 		using local_read_write_accessor = accessor<uint, 1, access::mode::read_write, access::target::local>;
-	  auto db = d_buffer.template get_access<access::mode::discard_read_write>(cgh);
-	  auto dnb = dn_buffer.template get_access<access::mode::discard_read_write>(cgh);
-	  auto blocksb = blocks_buffer.template get_access<access::mode::read>(cgh);
+	  auto db       = d_buffer.template get_access<access::mode::discard_read_write>(cgh);
+	  auto dnb      = dn_buffer.template get_access<access::mode::discard_read_write>(cgh);
+	  auto blocksb  = blocks_buffer.template get_access<access::mode::read>(cgh);
 	  auto parentsb = parents_buffer.get_access<access::mode::read_write>(cgh);
-	  auto newsb = news_buffer. template get_access<access::mode::write>(cgh);
+	  auto newsb    = news_buffer.template get_access<access::mode::write>(cgh);
 
 	  local_read_write_accessor ltsum(range<>(1), cgh), gtsum(range<>(1), cgh), lbeg(range<>(1), cgh), gbeg(range<>(1), cgh);
      
-      auto gqsort = gqsort_kernel_class<T>(db, dnb, blocksb, parentsb, newsb, ltsum, gtsum, lbeg, gbeg);
+    auto gqsort = gqsort_kernel_class<T>(db, dnb, blocksb, parentsb, newsb, ltsum, gtsum, lbeg, gbeg);
 
-      cgh.parallel_for(
-        *gqsort.kernel,
-		nd_range<>(GQSORT_LOCAL_WORKGROUP_SIZE * blocks.size(), 
-	               GQSORT_LOCAL_WORKGROUP_SIZE), 
-	    gqsort);
-    });
-    pOCL->queue.wait_and_throw();
+    cgh.parallel_for(*gqsort.kernel,
+		                 nd_range<>(GQSORT_LOCAL_WORKGROUP_SIZE * blocks.size(), 
+	                              GQSORT_LOCAL_WORKGROUP_SIZE), 
+	                   gqsort);
+  });
+  pOCL->queue.wait_and_throw();
 
 #ifdef GET_DETAILED_PERFORMANCE
-    endClock = seconds();
+  endClock = seconds();
 	double totalTime = endClock - beginClock;
 	absoluteTotal += totalTime;
 	std::cout << ++count << ": gqsort time " << absoluteTotal * 1000 << " ms" << std::endl;
@@ -712,8 +643,8 @@ void gqsort(OCLResources *pOCL,
 template <class T>
 void lqsort(OCLResources *pOCL, 
             std::vector<work_record<T>>& done, 
-			buffer<T>& d_buffer, 
-			buffer<T>& dn_buffer) {
+		      	buffer<T>& d_buffer, 
+		      	buffer<T>& dn_buffer) {
 #ifdef GET_DETAILED_PERFORMANCE
     double beginClock, endClock;
     beginClock = seconds();
@@ -721,33 +652,32 @@ void lqsort(OCLResources *pOCL,
 
 	buffer<work_record<T>>  done_buffer(done.data(), done.size(), {property::buffer::use_host_ptr()});
 
-    pOCL->queue.submit([&](handler& cgh) {
-		using local_workstack_record_read_write_accessor = accessor<workstack_record, 1, access::mode::read_write, access::target::local>;
-		using local_T_read_write_accessor = accessor<T, 1, access::mode::read_write, access::target::local>;
-		using local_uint_read_write_accessor = accessor<uint, 1, access::mode::read_write, access::target::local>;
-		using local_int_read_write_accessor = accessor<int, 1, access::mode::read_write, access::target::local>;
+  pOCL->queue.submit([&](handler& cgh) {
+    using local_workstack_record_read_write_accessor = accessor<workstack_record, 1, access::mode::read_write, access::target::local>;
+  	using local_T_read_write_accessor = accessor<T, 1, access::mode::read_write, access::target::local>;
+  	using local_uint_read_write_accessor = accessor<uint, 1, access::mode::read_write, access::target::local>;
+  	using local_int_read_write_accessor = accessor<int, 1, access::mode::read_write, access::target::local>;
 
-      auto db = d_buffer.template get_access<access::mode::discard_read_write>(cgh);
-	  auto dnb = dn_buffer.template get_access<access::mode::discard_read_write>(cgh);
-      auto doneb = done_buffer.template get_access<access::mode::read>(cgh);
+    auto db = d_buffer.template get_access<access::mode::discard_read_write>(cgh);
+    auto dnb = dn_buffer.template get_access<access::mode::discard_read_write>(cgh);
+    auto doneb = done_buffer.template get_access<access::mode::read>(cgh);
 
-	  local_workstack_record_read_write_accessor workstack(range<>(QUICKSORT_BLOCK_SIZE/SORT_THRESHOLD), cgh);
-	  local_int_read_write_accessor workstack_pointer(range<>(1), cgh);
-	  local_uint_read_write_accessor ltsum(range<>(1), cgh), gtsum(range<>(1), cgh);
-      local_T_read_write_accessor mys(range<>(QUICKSORT_BLOCK_SIZE), cgh), mysn(range<>(QUICKSORT_BLOCK_SIZE), cgh),
-          temp(range<>(SORT_THRESHOLD), cgh);
+    local_workstack_record_read_write_accessor workstack(range<>(QUICKSORT_BLOCK_SIZE/SORT_THRESHOLD), cgh);
+    local_int_read_write_accessor workstack_pointer(range<>(1), cgh);
+    local_uint_read_write_accessor ltsum(range<>(1), cgh), gtsum(range<>(1), cgh);
+    local_T_read_write_accessor mys(range<>(QUICKSORT_BLOCK_SIZE), cgh), mysn(range<>(QUICKSORT_BLOCK_SIZE), cgh),
+                                temp(range<>(SORT_THRESHOLD), cgh);
  
  
-	  auto lqsort = lqsort_kernel_class<T>(db, dnb, doneb,
-	      workstack, workstack_pointer, mys, mysn, temp, ltsum, gtsum);
+    auto lqsort = lqsort_kernel_class<T>(db, dnb, doneb,
+	        workstack, workstack_pointer, mys, mysn, temp, ltsum, gtsum);
 
-      cgh.parallel_for(
-		*lqsort.kernel,
-		nd_range<>(LQSORT_LOCAL_WORKGROUP_SIZE * done.size(), 
-	               LQSORT_LOCAL_WORKGROUP_SIZE), 
-	    lqsort);
-    });
-    pOCL->queue.wait_and_throw();
+    cgh.parallel_for(*lqsort.kernel,
+	  	               nd_range<>(LQSORT_LOCAL_WORKGROUP_SIZE * done.size(), 
+	                              LQSORT_LOCAL_WORKGROUP_SIZE), 
+	                   lqsort);
+  });
+  pOCL->queue.wait_and_throw();
 
 #ifdef GET_DETAILED_PERFORMANCE
 	endClock = seconds();
@@ -875,7 +805,6 @@ int big_test(OCLResources& myOCL, uint arraySize, unsigned int	NUM_ITERATIONS,
              const char* pDeviceStr, const std::string& type_name) 
 {
 	double totalTime, quickSortTime, stdSortTime;
-
 	double beginClock, endClock;
     
 	printf("\n\n\n--------------------------------------------------------------------\n");
@@ -907,7 +836,6 @@ int big_test(OCLResources& myOCL, uint arraySize, unsigned int	NUM_ITERATIONS,
 	std::copy(pArray, pArray + arraySize, pArrayCopy);
 
   beginClock = seconds();
-	//quicksort(pArrayCopy, 0, arraySize-1);
   tbb::parallel_sort(pArrayCopy, pArrayCopy + arraySize);
   endClock = seconds();
 	totalTime = endClock - beginClock;
@@ -940,29 +868,12 @@ int big_test(OCLResources& myOCL, uint arraySize, unsigned int	NUM_ITERATIONS,
 #endif
 #endif // RUN_CPU_SORTS
 
-	// Initialize OpenCL:
 	bool bCPUDevice = false;
 	std::cout << "Sorting with GPUQSort on the " << pDeviceStr << " with type " << type_name << ":" << std::endl;
 	std::vector<T> original(arraySize);
 	std::copy(pArray, pArray + arraySize, original.begin());
 
   // Let's prebuild SYCL program
-  // assemble kernel ids:
-  /*
-  auto lqsort_kernel_id = get_kernel_id<lqsort_kernel_class<T>>();
-  auto gqsort_kernel_id = get_kernel_id<gqsort_kernel_class<T>>();
-  auto two_kernel_bundle = cl::sycl::get_kernel_bundle<bundle_state::input>(myOCL.contextHdl, {lqsort_kernel_id, gqsort_kernel_id});
-  totalTime = 0;
-	beginClock = seconds();
-  auto program = build(two_kernel_bundle);
-  endClock = seconds();
-	totalTime += endClock - beginClock;
-	std::cout << "Time to build SYCL Program for type " << type_name << ": " << totalTime * 1000 << " ms" << std::endl;
-  new (lqsort_kernel_class<T>::kernel) cl::sycl::kernel(program.get_kernel(lqsort_kernel_id));
-  new (gqsort_kernel_class<T>::kernel) cl::sycl::kernel(program.get_kernel(gqsort_kernel_id));
-  */
-
-	//cl::sycl::program program(myOCL.contextHdl);
 //#define SWAP_ORDER 1
 #ifdef SWAP_ORDER
 goto try_me_first;
