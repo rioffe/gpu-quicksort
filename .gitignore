@@ -30,3 +30,13 @@
 *.exe
 *.out
 *.app
+
+# Build directories
+build/
+
+# Metal intermediate files
+*.air
+*.metallib
+
+# Claude Code
+.claude/
